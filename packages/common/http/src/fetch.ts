@@ -379,7 +379,11 @@ export class FetchBackend implements HttpBackend {
 }
 
 /**
- * Abstract class to provide a mocked implementation of `fetch()`
+ * 
+ * Abstract class to provide a custom implementation of `fetch()`.
+ * This is useful when a custom fetch implementation is needed.
+ * 
+ * @publicApi
  */
 export abstract class FetchFactory {
   abstract fetch: typeof fetch;

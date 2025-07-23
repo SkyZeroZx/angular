@@ -16,6 +16,7 @@ import {
   HttpDownloadProgressEvent,
   HttpErrorResponse,
   HttpHeaderResponse,
+  HttpHeaders,
   HttpParams,
   HttpStatusCode,
   provideHttpClient,
@@ -545,6 +546,158 @@ describe('FetchBackend', async () => {
     });
   });
 
+  describe('FetchFactory', () => {
+    let customFetchFactory: CustomFetchFactory;
+    let backend: FetchBackend;
+
+    beforeEach(() => {
+      TestBed.resetTestingModule();
+      customFetchFactory = new CustomFetchFactory();
+      TestBed.configureTestingModule({
+        providers: [{provide: FetchFactory, useValue: customFetchFactory}, FetchBackend],
+      });
+      backend = TestBed.inject(FetchBackend);
+    });
+
+    it('should use custom FetchFactory implementation', async () => {
+      const customResponse = new Response(JSON.stringify({custom: true}));
+      customFetchFactory.setMockResponse(customResponse);
+
+      const promise = trackEvents(backend.handle(TEST_POST.clone({responseType: 'json'})));
+      const events = await promise;
+
+      expect(events.length).toBe(2);
+      expect(customFetchFactory.fetchSpy).toHaveBeenCalledWith(
+        '/test',
+        jasmine.objectContaining({
+          method: 'POST',
+          body: 'some body',
+        }),
+      );
+
+      const response = events[1] as HttpResponse<any>;
+      expect(response.body).toEqual({custom: true});
+    });
+
+    it('should pass all request options to custom fetch implementation', async () => {
+      const customResponse = new Response('test');
+      customFetchFactory.setMockResponse(customResponse);
+
+      const requestWithOptions = new HttpRequest('PUT', '/api/test', 'body', {
+        headers: new HttpHeaders({'Custom-Header': 'value'}),
+        withCredentials: true,
+        cache: 'no-cache',
+        mode: 'cors',
+        redirect: 'follow',
+        keepalive: true,
+        priority: 'high' as any,
+        referrer: 'no-referrer',
+        integrity: 'sha256-test',
+      });
+
+      const promise = trackEvents(backend.handle(requestWithOptions));
+      await promise;
+
+      expect(customFetchFactory.fetchSpy).toHaveBeenCalledWith(
+        '/api/test',
+        jasmine.objectContaining({
+          method: 'PUT',
+          body: 'body',
+          credentials: 'include',
+          cache: 'no-cache',
+          mode: 'cors',
+          redirect: 'follow',
+          keepalive: true,
+          priority: 'high',
+          referrer: 'no-referrer',
+          integrity: 'sha256-test',
+          headers: jasmine.objectContaining({
+            'Custom-Header': 'value',
+          }),
+        }),
+      );
+    });
+
+    it('should handle custom fetch errors correctly', (done) => {
+      const customError = new Error('Custom fetch error');
+      customFetchFactory.setMockError(customError);
+
+      backend.handle(TEST_POST).subscribe({
+        error: (err: HttpErrorResponse) => {
+          expect(err instanceof HttpErrorResponse).toBe(true);
+          expect(err.error).toBe(customError);
+          done();
+        },
+      });
+    });
+
+    it('should support AbortController with custom fetch', (done) => {
+      customFetchFactory.setMockAbort();
+
+      backend.handle(TEST_POST).subscribe({
+        error: (err: HttpErrorResponse) => {
+          expect(err instanceof HttpErrorResponse).toBe(true);
+          expect(err.error instanceof DOMException).toBe(true);
+          expect((err.error as DOMException).name).toBe('AbortError');
+          done();
+        },
+      });
+    });
+
+    it('should work with progress reporting using custom fetch', (done) => {
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('part1'));
+          setTimeout(() => {
+            controller.enqueue(new TextEncoder().encode('part2'));
+            setTimeout(() => {
+              controller.close();
+            }, 10);
+          }, 10);
+        },
+      });
+
+      const customResponse = new Response(mockStream, {
+        headers: {'content-length': '10'},
+      });
+      customFetchFactory.setMockResponse(customResponse);
+
+      backend
+        .handle(TEST_POST.clone({reportProgress: true}))
+        .pipe(toArray())
+        .subscribe((events) => {
+          expect(events.length).toBeGreaterThan(2);
+          expect(events[0].type).toBe(HttpEventType.Sent);
+          expect(events[1].type).toBe(HttpEventType.ResponseHeader);
+          expect(events.some((e) => e.type === HttpEventType.DownloadProgress)).toBe(true);
+          expect(events[events.length - 1].type).toBe(HttpEventType.Response);
+          done();
+        });
+    });
+
+    it('should require implementation of abstract fetch property', () => {
+      // This test ensures that FetchFactory is abstract and requires implementation
+      expect(() => {
+        abstract class TestFetchFactory extends FetchFactory {
+          // Missing fetch implementation should cause compilation error
+        }
+      }).toBeDefined();
+    });
+
+    it('should handle network errors in custom implementation', (done) => {
+      const networkError = new TypeError('Network error');
+      customFetchFactory.setMockError(networkError);
+
+      backend.handle(TEST_POST).subscribe({
+        error: (err: HttpErrorResponse) => {
+          expect(err instanceof HttpErrorResponse).toBe(true);
+          expect(err.error).toBe(networkError);
+          done();
+        },
+      });
+    });
+  });
+
   describe('dynamic global fetch', () => {
     beforeEach(() => {
       TestBed.resetTestingModule();
@@ -582,6 +735,50 @@ describe('FetchBackend', async () => {
     });
   });
 });
+
+export class CustomFetchFactory extends FetchFactory {
+  public fetchSpy = jasmine.createSpy('customFetch').and.callFake(this.mockFetch.bind(this));
+  private mockResponse?: Response;
+  private mockError?: any;
+  private shouldAbort = false;
+
+  override fetch: typeof fetch = this.fetchSpy;
+
+  setMockResponse(response: Response): void {
+    this.mockResponse = response;
+    this.mockError = undefined;
+    this.shouldAbort = false;
+  }
+
+  setMockError(error: any): void {
+    this.mockError = error;
+    this.mockResponse = undefined;
+    this.shouldAbort = false;
+  }
+
+  setMockAbort(): void {
+    this.shouldAbort = true;
+    this.mockResponse = undefined;
+    this.mockError = undefined;
+  }
+
+  private async mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    if (this.shouldAbort) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+
+    if (this.mockError) {
+      throw this.mockError;
+    }
+
+    if (this.mockResponse) {
+      return this.mockResponse;
+    }
+
+    // Default response if no mock is set
+    return new Response('{}', {status: 200, statusText: 'OK'});
+  }
+}
 
 export class MockFetchFactory extends FetchFactory {
   public readonly response = new MockFetchResponse();

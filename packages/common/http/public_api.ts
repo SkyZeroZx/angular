@@ -9,7 +9,7 @@
 export {HttpBackend, HttpHandler} from './src/backend';
 export {HttpClient} from './src/client';
 export {HttpContext, HttpContextToken} from './src/context';
-export {FetchBackend} from './src/fetch';
+export {FetchBackend, FetchFactory} from './src/fetch';
 export {HttpHeaders} from './src/headers';
 export {
   HTTP_INTERCEPTORS,
