@@ -612,6 +612,18 @@ export enum ErrorCode {
   UNINVOKED_FUNCTION_IN_TEXT_INTERPOLATION = 8117,
 
   /**
+   * Multiple bindings target the same HTML attribute or class.
+   *
+   * For example:
+   * ```html
+   * <div [attr.id]="'dynamicId'" [id]="'Custom latest'"></div>
+   * ```
+   *
+   * Both bindings target the same HTML attribute 'id'. Only the last binding will take effect.
+   */
+  DUPLICATE_ATTRIBUTE_BINDING = 8118,
+
+  /**
    * The template type-checking engine would need to generate an inline type check block for a
    * component, but the current type-checking environment doesn't support it.
    */
