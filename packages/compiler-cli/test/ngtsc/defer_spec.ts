@@ -7,6 +7,7 @@
  */
 
 import {ErrorCode, ngErrorCode} from '../../src/ngtsc/diagnostics';
+import ts from 'typescript';
 
 import {runInEachFileSystem} from '../../src/ngtsc/file_system/testing';
 import {loadStandardTestFiles} from '../../src/ngtsc/testing';
@@ -1652,6 +1653,305 @@ runInEachFileSystem(() => {
         expect(diags[0].messageText).toBe(
           'Trigger with no parameters can only be placed on an @defer that has a @placeholder block with exactly one root element node',
         );
+      });
+    });
+
+    describe('Extended @defer diagnostics', () => {
+      it('should produce error when namespace import is used inside @defer block', () => {
+        env.write(
+          'some.ts',
+          `
+            import {Component} from '@angular/core';
+
+            @Component({
+              selector: 'my-comp',
+              standalone: true,
+              template: 'My Component',
+            })
+            export class MyComp {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import * as all from './some';
+
+            @Component({
+              selector: 'test-cmp',
+              standalone: true,
+              imports: [all.MyComp],
+              template: \`
+                @defer {
+                  <my-comp />
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBeGreaterThanOrEqual(1);
+        expect(diags[0].code).toBe(ngErrorCode(ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY));
+      });
+
+      it('should produce error when NgModule dependency is used inside @defer block', () => {
+        env.write(
+          'some.ts',
+          `
+            import {Component} from '@angular/core';
+
+            @Component({
+              selector: 'my-comp',
+              template: 'My Component',
+            })
+            export class MyComp {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import * as all from './some';
+
+            @Component({
+              selector: 'test-cmp',
+              imports: [all.MyComp],
+              template: \`
+                @defer {
+                  <my-comp />
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(1);
+        expect(diags[0].code).toBe(ngErrorCode(ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY));
+        expect(diags[0].messageText).toContain('namespace import');
+        expect(diags[0].messageText).toContain('prevents code-splitting');
+        expect(diags[0].messageText).toContain('named import instead');
+      });
+
+      it('should not produce error when standalone dependency with named import is used only in @defer', () => {
+        env.write(
+          'some.ts',
+          `
+            import {Component} from '@angular/core';
+
+            @Component({
+              selector: 'my-comp',
+              template: 'My Component',
+            })
+            export class MyComp {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import {MyComp} from './some';
+
+            @Component({
+              selector: 'test-cmp',
+              imports: [MyComp],
+              template: \`
+                @defer {
+                  <my-comp />
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
+      });
+
+      it('should produce error when standalone dependency is used both inside and outside @defer', () => {
+        env.write(
+          'some.ts',
+          `
+            import {Component} from '@angular/core';
+
+            @Component({
+              selector: 'my-comp',
+              standalone: true,
+              template: 'My Component',
+            })
+            export class MyComp {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import {MyComp} from './some';
+
+            @Component({
+              selector: 'test-cmp',
+              standalone: true,
+              imports: [MyComp],
+              template: \`
+                <my-comp />
+                @defer {
+                  <my-comp />
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+        // This should produce a diagnostic because the dependency is used both
+        // outside (eagerly) and inside the defer block, making defer ineffective
+        expect(diags.length).toBe(1);
+        expect(diags[0].code).toBe(ngErrorCode(ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY));
+      });
+
+      it('should produce error when namespace import is used both inside and outside @defer', () => {
+        env.write(
+          'some.ts',
+          `
+            import {Component} from '@angular/core';
+
+            @Component({
+              selector: 'my-comp',
+              standalone: true,
+              template: 'My Component',
+            })
+            export class MyComp {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import {MyComp} from './some';
+
+            @Component({
+              selector: 'test-cmp',
+              standalone: true,
+              imports: [MyComp],
+              template: \`
+                <my-comp />
+                @defer {
+                  <my-comp />
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+
+        expect(diags[0].code).toBe(ngErrorCode(ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY));
+      });
+
+      it('should produce error when NgModule dependency is used inside @defer block', () => {
+        env.write(
+          'module.ts',
+          `
+            import {Component, NgModule} from '@angular/core';
+
+            @Component({
+              standalone: false,
+              selector: 'app-module-comp',
+              template: \`<div>My Module Component</div>\`,
+            })
+            export class MyModuleComp {}
+
+            @NgModule({
+              declarations: [MyModuleComp],
+              imports: [],
+              exports: [MyModuleComp],
+            })
+            export class TestModule {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import {TestModule} from './module';
+
+            @Component({
+              selector: 'test-cmp',
+              standalone: true,
+              imports: [TestModule],
+              template: \`
+                @defer {
+                  <app-module-comp></app-module-comp>
+                }
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+
+        expect(diags[0].code).toBe(ngErrorCode(ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY));
+        expect(diags[0].category).toBe(ts.DiagnosticCategory.Warning); // Should be warning, not error
+        expect(diags[0].messageText).toContain('NgModule');
+        expect(diags[0].messageText).toContain('cannot be deferred');
+        expect(diags[0].messageText).toContain('may reduce the effectiveness'); // Updated message
+      });
+
+      it('should not produce error when NgModule dependency is used not inside @defer block', () => {
+        env.write(
+          'module.ts',
+          `
+            import {Component, NgModule} from '@angular/core';
+
+            @Component({
+              standalone: false,
+              selector: 'app-module-comp',
+              template: \`<div>My Module Component</div>\`,
+            })
+            export class MyModuleComp {}
+
+            @NgModule({
+              declarations: [MyModuleComp],
+              imports: [],
+              exports: [MyModuleComp],
+            })
+            export class TestModule {}
+          `,
+        );
+
+        env.write(
+          'test.ts',
+          `
+            import {Component} from '@angular/core';
+            import {TestModule} from './module';
+
+            @Component({
+              selector: 'test-cmp',
+              standalone: true,
+              imports: [TestModule],
+              template: \`
+                <app-module-comp></app-module-comp>
+              \`,
+            })
+            export class TestCmp {}
+          `,
+        );
+
+        const diags = env.driveDiagnostics();
+        expect(diags.length).toBe(0);
       });
     });
   });

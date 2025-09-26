@@ -1297,6 +1297,7 @@ export class ComponentDecoratorHandler
           analysis,
           eagerlyUsed,
         );
+
         data.hasDirectiveDependencies =
           !analysis.meta.isStandalone ||
           allDependencies.some(({kind, ref}) => {
@@ -1312,6 +1313,42 @@ export class ComponentDecoratorHandler
         // compilation mode. Assume that it always has directive dependencies in such cases.
         data.hasDirectiveDependencies = true;
       }
+
+      // Generate defer-related diagnostics (runs in all compilation modes)
+      // Check namespace imports first (higher priority)
+      const namespaceImportDiagnostics = validateNamespaceImportsInDefer(
+        node,
+        deferBlocks,
+        declarations,
+        data.deferrableDeclToImportDecl,
+        analysis.rawImports,
+      );
+
+      // If namespace import diagnostics were found, use only those
+      if (namespaceImportDiagnostics.length > 0) {
+        diagnostics.push(...namespaceImportDiagnostics);
+      } else {
+        // Only check "used both" if no namespace import issues were found
+        const isHmrEnabled = this.enableHmr;
+        if (!isHmrEnabled) {
+          const eagerUsedInDeferDiagnostics = validateEagerDepsUsedInDefer(
+            deferBlocks,
+            declarations,
+            eagerlyUsed,
+            analysis.rawImports,
+          );
+          diagnostics.push(...eagerUsedInDeferDiagnostics);
+        }
+      }
+
+      const ngModuleInDeferDiagnostics = validateNgModuleInDefer(
+        node,
+        deferBlocks,
+        declarations,
+        data.deferrableDeclToImportDecl,
+        analysis.rawImports,
+      );
+      diagnostics.push(...ngModuleInDeferDiagnostics);
 
       this.handleDependencyCycles(
         node,
@@ -1335,7 +1372,7 @@ export class ComponentDecoratorHandler
     }
 
     if (diagnostics.length > 0) {
-      return {diagnostics};
+      return {diagnostics, data};
     }
 
     return {data};
@@ -2363,25 +2400,60 @@ export class ComponentDecoratorHandler
   ) {
     const node = tryUnwrapForwardRef(element, this.reflector) || element;
 
-    if (!ts.isIdentifier(node)) {
-      // Can't defer-load non-literal references.
+    let identifier: ts.Identifier;
+    let isFromNamespaceImport = false;
+    let namespaceImportDecl: ts.ImportDeclaration | null = null;
+
+    // Handle property access expressions like all.MyComp
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.name) &&
+      ts.isIdentifier(node.expression)
+    ) {
+      identifier = node.name;
+      const namespaceId = node.expression;
+
+      // Check if the namespace is a namespace import
+      const namespaceImport = this.reflector.getImportOfIdentifier(namespaceId);
+      if (namespaceImport && namespaceImport.node && ts.isImportDeclaration(namespaceImport.node)) {
+        const importClause = namespaceImport.node.importClause;
+        if (importClause?.namedBindings && ts.isNamespaceImport(importClause.namedBindings)) {
+          isFromNamespaceImport = true;
+          namespaceImportDecl = namespaceImport.node;
+        }
+      }
+    } else if (ts.isIdentifier(node)) {
+      identifier = node;
+    } else {
       return;
     }
 
-    const imp = this.reflector.getImportOfIdentifier(node);
-    if (imp === null) {
-      // Can't defer-load symbols which aren't imported.
-      return;
+    // For namespace imports, we need to construct a synthetic import info
+    let imp: Import | null;
+    if (isFromNamespaceImport && namespaceImportDecl) {
+      const moduleSpecifier = namespaceImportDecl.moduleSpecifier;
+      if (ts.isStringLiteral(moduleSpecifier)) {
+        imp = {
+          from: moduleSpecifier.text,
+          name: identifier.text,
+          node: namespaceImportDecl,
+        };
+      } else {
+        return;
+      }
+    } else {
+      imp = this.reflector.getImportOfIdentifier(identifier);
+      if (imp === null) {
+        return;
+      }
     }
 
-    const decl = this.reflector.getDeclarationOfIdentifier(node);
+    const decl = this.reflector.getDeclarationOfIdentifier(identifier);
     if (decl === null) {
-      // Can't defer-load symbols which don't exist.
       return;
     }
 
     if (!isNamedClassDeclaration(decl.node)) {
-      // Can't defer-load symbols which aren't classes.
       return;
     }
 
@@ -2391,8 +2463,6 @@ export class ComponentDecoratorHandler
     }
 
     if (eagerlyUsedDecls.has(decl.node)) {
-      // Can't defer-load symbols that are eagerly referenced as a dependency
-      // in a template outside of a defer block.
       return;
     }
 
@@ -2409,17 +2479,21 @@ export class ComponentDecoratorHandler
     }
 
     if (dirMeta === null && pipeMeta === null) {
-      // This is not a directive or a pipe.
       return;
     }
 
-    // Keep track of how this class made it into the current source file.
-    // Store the full `Import` info so that callers can correctly determine the
-    // exported name (handling aliasing) and the module specifier.
     resolutionData.deferrableDeclToImportDecl.set(decl.node, imp);
 
+    // For namespace imports, we need to pass the namespace identifier, not the property
+    const identifierToTrack =
+      isFromNamespaceImport &&
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression)
+        ? node.expression
+        : identifier;
+
     this.deferredSymbolTracker.markAsDeferrableCandidate(
-      node,
+      identifierToTrack,
       imp.node,
       componentClassDecl,
       isDeferredImport,
@@ -2524,6 +2598,196 @@ function removeDeferrableTypesFromComponentDecorator(
     );
     analysis.classMetadata.decorators = new o.WrappedNodeExpr(rewrittenDecoratorsNode);
   }
+}
+
+/**
+ * Validates NgModule dependencies used inside @defer blocks and emits diagnostics.
+ * NgModule dependencies cannot be deferred as they are always eagerly loaded.
+ */
+function validateNgModuleInDefer(
+  componentClassDecl: ClassDeclaration,
+  deferBlocks: Map<TmplAstDeferredBlock, BoundTarget<DirectiveMeta>>,
+  allDeclarations: Map<ClassDeclaration, AnyUsedType>,
+  deferrableDeclToImportDecl: Map<ClassDeclaration, Import>,
+  rawImports: ts.Expression | null,
+): ts.Diagnostic[] {
+  const diagnostics: ts.Diagnostic[] = [];
+
+  // Only check if there are actually defer blocks
+  if (deferBlocks.size === 0) {
+    return diagnostics;
+  }
+
+  // Check for NgModule dependencies when defer blocks are present
+  // NgModules cannot be code-split, so using them with defer blocks is less effective
+  for (const [clazz, decl] of allDeclarations) {
+    if (decl.kind === R3TemplateDependencyKind.NgModule) {
+      // When NgModules are used in components with defer blocks, warn about limitations
+      const classInfo = clazz.name ? `'${clazz.name.text}'` : 'An NgModule';
+      
+      const diagnostic = makeDiagnostic(
+        ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY,
+        getDiagnosticNode(new Reference(clazz), rawImports),
+        `${classInfo} is an NgModule dependency that cannot be deferred. ` +
+          `NgModule dependencies are always eagerly loaded, which may reduce the effectiveness of @defer blocks in this component. ` +
+          `Consider using standalone components instead of NgModules for better defer support.`,
+        undefined, // relatedInformation
+        ts.DiagnosticCategory.Warning, // Make it a warning instead of error
+      );
+      diagnostics.push(diagnostic);
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Validates namespace imports used in defer blocks and emits diagnostics.
+ * Namespace imports prevent code-splitting and cannot be effectively deferred.
+ */
+function validateNamespaceImportsInDefer(
+  componentClassDecl: ClassDeclaration,
+  deferBlocks: Map<TmplAstDeferredBlock, BoundTarget<DirectiveMeta>>,
+  allDeclarations: Map<ClassDeclaration, AnyUsedType>,
+  deferrableDeclToImportDecl: Map<ClassDeclaration, Import>,
+  rawImports: ts.Expression | null,
+): ts.Diagnostic[] {
+  const diagnostics: ts.Diagnostic[] = [];
+
+  // Only check if there are actually defer blocks
+  if (deferBlocks.size === 0) {
+    return diagnostics;
+  }
+
+  for (const [deferBlock, bound] of deferBlocks) {
+    // Get all directives and pipes used in this specific defer block
+    const usedDirectives = new Set(bound.getEagerlyUsedDirectives().map((d) => d.ref.node));
+    const usedPipes = new Set(bound.getEagerlyUsedPipes());
+
+    for (const [clazz, decl] of allDeclarations) {
+      if (decl.kind === R3TemplateDependencyKind.NgModule) {
+        continue; // Already handled by validateNgModuleInDefer
+      }
+
+      // Check if this declaration is actually used in this defer block
+      let isUsedInThisBlock = false;
+      if (decl.kind === R3TemplateDependencyKind.Directive) {
+        isUsedInThisBlock = usedDirectives.has(clazz);
+      } else if (decl.kind === R3TemplateDependencyKind.Pipe) {
+        isUsedInThisBlock = usedPipes.has(decl.name);
+      }
+
+      if (!isUsedInThisBlock) {
+        continue;
+      }
+
+      const importInfo = deferrableDeclToImportDecl.get(clazz);
+
+      if (!importInfo || !importInfo.node || !importInfo.node.importClause) {
+        continue;
+      }
+
+      const importClause = importInfo.node.importClause;
+      // Check if this is a namespace import: import * as X from 'module'
+      const isNamespaceImport =
+        importClause.namedBindings && ts.isNamespaceImport(importClause.namedBindings);
+
+      if (isNamespaceImport) {
+        const classInfo = clazz.name ? `'${clazz.name.text}'` : 'A dependency';
+        const diagnostic = makeDiagnostic(
+          ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY,
+          getDiagnosticNode(new Reference(clazz), rawImports),
+          `${classInfo} appears in an @defer block but will still be imported eagerly. ` +
+            `It is imported via a namespace import which prevents code-splitting. ` +
+            `To fix this, use a named import instead: import { ${clazz.name?.text || 'Component'} } from '${importInfo.from}'.`,
+        );
+        diagnostics.push(diagnostic);
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Validates dependencies that are used both eagerly (outside defer blocks) and inside defer blocks.
+ * Such dependencies cannot benefit from deferring since they must be loaded eagerly anyway.
+ * This is specifically for standalone components using regular imports, not deferredImports.
+ */
+function validateEagerDepsUsedInDefer(
+  deferBlocks: Map<TmplAstDeferredBlock, BoundTarget<DirectiveMeta>>,
+  allDeclarations: Map<ClassDeclaration, AnyUsedType>,
+  eagerlyUsed: Set<ClassDeclaration>,
+  rawImports: ts.Expression | null,
+): ts.Diagnostic[] {
+  const diagnostics: ts.Diagnostic[] = [];
+
+  // Only check if there are actually defer blocks
+  if (deferBlocks.size === 0) {
+    return diagnostics;
+  }
+
+  // Track which dependencies are used in defer blocks to avoid duplicates
+  const deferredDependencies = new Set<ClassDeclaration>();
+
+  for (const [deferBlock, bound] of deferBlocks) {
+    // Get all directives and pipes used in this specific defer block
+    const usedDirectives = new Set(bound.getEagerlyUsedDirectives().map((d) => d.ref.node));
+    const usedPipes = new Set(bound.getEagerlyUsedPipes());
+
+    for (const [clazz, decl] of allDeclarations) {
+      if (decl.kind === R3TemplateDependencyKind.NgModule) {
+        continue; // NgModules are handled separately
+      }
+
+      // Check if this declaration is actually used in this defer block
+      let isUsedInThisBlock = false;
+      if (decl.kind === R3TemplateDependencyKind.Directive) {
+        isUsedInThisBlock = usedDirectives.has(clazz);
+      } else if (decl.kind === R3TemplateDependencyKind.Pipe) {
+        isUsedInThisBlock = usedPipes.has(decl.name);
+      }
+
+      if (isUsedInThisBlock) {
+        deferredDependencies.add(clazz);
+      }
+    }
+  }
+
+  // Only create diagnostics for dependencies that are BOTH:
+  // 1. Used eagerly (outside defer blocks)
+  // 2. Used in defer blocks
+  // 3. Not already handled by other diagnostic systems
+  // 4. Not used in defer triggers (which is legitimate Angular behavior)
+  for (const clazz of deferredDependencies) {
+    if (eagerlyUsed.has(clazz)) {
+      const decl = allDeclarations.get(clazz);
+      if (!decl) continue;
+
+      // Skip pipes - Angular handles pipes used in both triggers and defer content appropriately
+      if (decl.kind === R3TemplateDependencyKind.Pipe) {
+        continue;
+      }
+
+      const classInfo = clazz.name ? `'${clazz.name.text}'` : 'A dependency';
+      const dependencyType =
+        decl.kind === R3TemplateDependencyKind.Directive ? 'component' : 'pipe';
+
+      const diagnostic = makeDiagnostic(
+        ErrorCode.DEFERRED_DEPENDENCY_IMPORTED_EAGERLY,
+        getDiagnosticNode(new Reference(clazz), rawImports),
+        `${classInfo} is used both inside and outside of @defer blocks. ` +
+          `This ${dependencyType} will be loaded eagerly, making the @defer block ineffective. ` +
+          `To fix this, use the ${dependencyType} either only inside @defer blocks or only outside them.`,
+      );
+      diagnostics.push(diagnostic);
+
+      // Only report once per dependency
+      break;
+    }
+  }
+
+  return diagnostics;
 }
 
 /**
