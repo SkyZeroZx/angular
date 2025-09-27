@@ -388,6 +388,16 @@ function createRootTView(
       if (binding.update) {
         (binding as BindingInternal).targetIdx = 0;
         (updateBindings ??= []).push(binding);
+
+        // Validate input bindings against the component definition during creation
+        if (ngDevMode && isInputBinding(binding)) {
+          if (binding.publicName && !componentDef.inputs.hasOwnProperty(binding.publicName)) {
+            throw new RuntimeError(
+              RuntimeErrorCode.NO_BINDING_TARGET,
+              `${stringifyForError(componentDef.type)} does not have an input with a public name of "${binding.publicName}".`,
+            );
+          }
+        }
       }
     }
   }
@@ -396,6 +406,11 @@ function createRootTView(
     for (let i = 0; i < directives.length; i++) {
       const directive = directives[i];
       if (typeof directive !== 'function') {
+        // Get directive definition for validation
+        const directiveDef = ngDevMode
+          ? getDirectiveDefOrThrow(directive.type)
+          : getDirectiveDef(directive.type)!;
+
         for (const binding of directive.bindings as BindingInternal[]) {
           varsToAllocate += binding[BINDING].requiredVars;
           const targetDirectiveIdx = i + 1;
@@ -407,6 +422,16 @@ function createRootTView(
           if (binding.update) {
             (binding as BindingInternal).targetIdx = targetDirectiveIdx;
             (updateBindings ??= []).push(binding);
+
+            // Validate input bindings against the directive definition during creation
+            if (ngDevMode && isInputBinding(binding)) {
+              if (binding.publicName && !directiveDef.inputs.hasOwnProperty(binding.publicName)) {
+                throw new RuntimeError(
+                  RuntimeErrorCode.NO_BINDING_TARGET,
+                  `${stringifyForError(directive.type)} does not have an input with a public name of "${binding.publicName}".`,
+                );
+              }
+            }
           }
         }
       }

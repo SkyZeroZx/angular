@@ -40,6 +40,9 @@ export interface BindingInternal extends Binding {
   /** Target index (in a view's registry) to which to apply the binding. */
   targetIdx?: number;
 
+  /** Public name for input/output bindings. Used for validation during creation. */
+  publicName?: string;
+
   /** Callback that will be invoked during creation. */
   create?(): void;
 
@@ -85,16 +88,11 @@ function inputBindingUpdate(targetDirectiveIdx: number, publicName: string, valu
       );
     }
 
-    // TODO(pk): the hasSet check should be replaced by one-off check in the first creation pass
-    const hasSet = setDirectiveInput(tNode, tView, lView, targetDef, publicName, value);
+    // Input validation is now done during creation phase, so we can directly set the input
+    // without the hasSet check that was previously needed on every update
+    setDirectiveInput(tNode, tView, lView, targetDef, publicName, value);
 
     if (ngDevMode) {
-      if (!hasSet) {
-        throw new RuntimeError(
-          RuntimeErrorCode.NO_BINDING_TARGET,
-          `${stringifyForError(targetDef.type)} does not have an input with a public name of "${publicName}".`,
-        );
-      }
       storePropertyBindingMetadata(tView.data, tNode, publicName, bindingIndex);
     }
   }
@@ -123,6 +121,7 @@ export function inputBinding(publicName: string, value: () => unknown): Binding 
   // don't get tree shaken when constructed by a function like this.
   const binding: BindingInternal = {
     [BINDING]: INPUT_BINDING_METADATA,
+    publicName: publicName, // Store public name for validation during creation
     update: () => inputBindingUpdate((binding as BindingInternal).targetIdx!, publicName, value()),
   };
 
@@ -205,6 +204,7 @@ export function twoWayBinding(publicName: string, value: WritableSignal<unknown>
       kind: 'twoWay',
       requiredVars: input[BINDING].requiredVars + output[BINDING].requiredVars,
     },
+    publicName: publicName, // Store public name for validation during creation
     set targetIdx(idx: number) {
       (input as Writable<BindingInternal>).targetIdx = idx;
       (output as Writable<BindingInternal>).targetIdx = idx;
