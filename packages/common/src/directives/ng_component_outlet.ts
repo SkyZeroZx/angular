@@ -92,6 +92,9 @@ import {
  *
  * {@example common/ngComponentOutlet/ts/module.ts region='CompleteExample'}
  *
+ * @see [Using NgComponentOutlet](guide/components/programmatic-rendering#using-ngcomponentoutlet)
+ *
+ *
  * @publicApi
  * @ngModule CommonModule
  */

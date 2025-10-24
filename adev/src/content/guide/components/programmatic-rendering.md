@@ -41,6 +41,95 @@ export class CustomDialog {
 }
 ```
 
+### Passing data to dynamically created components
+
+`NgComponentOutlet` provides bindings for configuring the component it renders. The directive accepts the following inputs:
+
+- `ngComponentOutlet` — Component type to instantiate.
+- `ngComponentOutletInputs` — Object whose keys map to the component's inputs.
+- `ngComponentOutletInjector` — Custom injector for the component.
+- `ngComponentOutletContent` — Projected nodes to insert into the component.
+- `ngComponentOutletEnvironmentInjector` — Custom environment injector.
+
+These bindings update whenever their values change, keeping the rendered component in sync. The directive exposes a `componentInstance` property that you can access through a template reference variable.
+
+```angular-ts
+const WIDGET_CONFIG = new InjectionToken<WidgetConfig>('WIDGET_CONFIG');
+
+interface WidgetConfig {
+  theme: 'compact' | 'cozy';
+}
+
+@Component({
+  selector: 'dynamic-widget',
+  standalone: true,
+  template: `
+    <article>
+      <h2>{{ title }}</h2>
+      <ng-content />
+      <p class="widget-theme">Active theme: {{ config.theme }}</p>
+    </article>
+  `,
+})
+export class DynamicWidget {
+  protected readonly config = inject(WIDGET_CONFIG)
+  title = input.required<string>();
+
+  reset() {
+    this.title.set('Example title');
+  }
+}
+
+@Component({
+  selector: 'dynamic-widget-host',
+  standalone: true,
+  imports: [NgComponentOutlet],
+  template: `
+    <ng-container
+      [ngComponentOutlet]="widgetComponent"
+      [ngComponentOutletInputs]="widgetInputs()"
+      [ngComponentOutletContent]="widgetContent"
+      [ngComponentOutletInjector]="widgetInjector"
+      #widgetOutlet="ngComponentOutlet">
+    </ng-container>
+
+    <ng-template #emptyState>
+      <p>No widget selected.</p>
+    </ng-template>
+
+    <button type="button" (click)="widgetOutlet.componentInstance?.reset()">Reset widget</button>
+  `,
+})
+export class DynamicWidgetHost implements OnInit, OnDestroy {
+  private readonly injector = inject(Injector);
+
+  widgetComponent: Type<DynamicWidget> | null = DynamicWidget;
+  widgetInputs = { title: 'Example title' };
+  widgetContent: Node[][] = [];
+  widgetInjector = Injector.create({
+    providers: [{ provide: WIDGET_CONFIG, useValue: { theme: 'compact' satisfies WidgetConfig } }],
+    parent: this.injector,
+  });
+
+  @ViewChild('emptyState', { read: TemplateRef, static: true }) private emptyState?: TemplateRef<unknown>;
+  private projectedView?: EmbeddedViewRef<unknown>;
+
+  ngOnInit() {
+    if (this.emptyState) {
+      this.projectedView = this.emptyState.createEmbeddedView({});
+      this.projectedView.detectChanges();
+      this.widgetContent = [this.projectedView.rootNodes];
+    }
+  }
+
+  ngOnDestroy() {
+    this.projectedView?.destroy();
+  }
+}
+```
+
+`ngComponentOutletContent` expects a two-dimensional array of DOM nodes, with one entry per projection slot. By creating an `EmbeddedViewRef` from a template, you can reuse its `rootNodes` for projection without having to manage the DOM manually. If you prefer, you can express the same configuration with the structural directive microsyntax using `*ngComponentOutlet="…"`.
+
 See the [NgComponentOutlet API reference](api/common/NgComponentOutlet) for more information on the
 directive's capabilities.
 
