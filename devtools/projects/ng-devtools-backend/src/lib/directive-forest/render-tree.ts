@@ -9,6 +9,7 @@
 import {
   ɵFrameworkAgnosticGlobalUtils as FrameworkAgnosticGlobalUtils,
   ɵDeferBlockData as DeferBlockData,
+  ɵControlFlowBlockData as ControlFlowBlockData,
   ɵHydratedNode as HydrationNode,
 } from '@angular/core';
 import {CurrentDeferBlock, HydrationStatus} from '../../../../protocol';
@@ -21,6 +22,7 @@ const extractViewTree = (
   domNode: Node | Element,
   result: ComponentTreeNode[],
   deferBlocks: DeferBlocksIterator,
+  controlFlowBlocks: ControlFlowBlocksIterator,
   rootId: number,
   getComponent?: FrameworkAgnosticGlobalUtils['getComponent'],
   getDirectives?: FrameworkAgnosticGlobalUtils['getDirectives'],
@@ -71,16 +73,31 @@ const extractViewTree = (
     result.push(componentTreeNode);
   }
 
-  // Nodes that are part of a defer block will be added as children of the defer block
-  // and should be skipped from the regular code path
-  const deferredNodesToSkip = new Set<Node>();
+  // Nodes that are part of a defer block or control flow block will be added as children
+  // of the respective block and should be skipped from the regular code path
+  const nodesToSkip = new Set<Node>();
   const appendTo = isDisplayableNode ? componentTreeNode.children : result;
 
   domNode.childNodes.forEach((node) => {
+    // Handle defer blocks
     groupDeferChildrenIfNeeded(
       node,
-      deferredNodesToSkip,
+      nodesToSkip,
       appendTo,
+      deferBlocks,
+      controlFlowBlocks,
+      rootId,
+      getComponent,
+      getDirectives,
+      getDirectiveMetadata,
+    );
+
+    // Handle control flow blocks (@for, @if)
+    groupControlFlowChildrenIfNeeded(
+      node,
+      nodesToSkip,
+      appendTo,
+      controlFlowBlocks,
       deferBlocks,
       rootId,
       getComponent,
@@ -88,11 +105,12 @@ const extractViewTree = (
       getDirectiveMetadata,
     );
 
-    if (!deferredNodesToSkip.has(node)) {
+    if (!nodesToSkip.has(node)) {
       extractViewTree(
         node,
         appendTo,
         deferBlocks,
+        controlFlowBlocks,
         rootId,
         getComponent,
         getDirectives,
@@ -108,8 +126,9 @@ const extractViewTree = (
  * Group Nodes under a defer block if they are part of it.
  *
  * @param node
- * @param deferredNodesToSkip Will mutate the set with the nodes that are grouped into the created deferblock.
+ * @param nodesToSkip Will mutate the set with the nodes that are grouped into the created block.
  * @param deferBlocks
+ * @param controlFlowBlocks
  * @param appendTo
  * @param getComponent
  * @param getDirectives
@@ -117,9 +136,10 @@ const extractViewTree = (
  */
 function groupDeferChildrenIfNeeded(
   node: Node,
-  deferredNodesToSkip: Set<Node>,
+  nodesToSkip: Set<Node>,
   appendTo: ComponentTreeNode[],
   deferBlocks: DeferBlocksIterator,
+  controlFlowBlocks: ControlFlowBlocksIterator,
   rootId: number,
   getComponent?: FrameworkAgnosticGlobalUtils['getComponent'],
   getDirectives?: FrameworkAgnosticGlobalUtils['getDirectives'],
@@ -138,6 +158,7 @@ function groupDeferChildrenIfNeeded(
         child,
         childrenTree,
         deferBlocks,
+        controlFlowBlocks,
         rootId,
         getComponent,
         getDirectives,
@@ -165,8 +186,69 @@ function groupDeferChildrenIfNeeded(
       },
     } satisfies ComponentTreeNode;
 
-    currentDeferBlock?.rootNodes.forEach((child) => deferredNodesToSkip.add(child));
+    currentDeferBlock?.rootNodes.forEach((child) => nodesToSkip.add(child));
     appendTo.push(deferBlockTreeNode);
+  }
+}
+
+/**
+ * Group Nodes under a control flow block (@for, @if) if they are part of it.
+ *
+ * @param node
+ * @param nodesToSkip Will mutate the set with the nodes that are grouped into the created block.
+ * @param appendTo
+ * @param controlFlowBlocks
+ * @param deferBlocks
+ * @param rootId
+ * @param getComponent
+ * @param getDirectives
+ * @param getDirectiveMetadata
+ */
+function groupControlFlowChildrenIfNeeded(
+  node: Node,
+  nodesToSkip: Set<Node>,
+  appendTo: ComponentTreeNode[],
+  controlFlowBlocks: ControlFlowBlocksIterator,
+  deferBlocks: DeferBlocksIterator,
+  rootId: number,
+  getComponent?: FrameworkAgnosticGlobalUtils['getComponent'],
+  getDirectives?: FrameworkAgnosticGlobalUtils['getDirectives'],
+  getDirectiveMetadata?: FrameworkAgnosticGlobalUtils['getDirectiveMetadata'],
+) {
+  const currentControlFlowBlock = controlFlowBlocks.currentBlock;
+  const isFirstControlFlowChild = node === currentControlFlowBlock?.rootNodes[0];
+  if (isFirstControlFlowChild) {
+    controlFlowBlocks.advance();
+
+    // When encountering the first child of a control flow block
+    // We create a synthetic TreeNode representing the control flow block
+    const childrenTree: ComponentTreeNode[] = [];
+    currentControlFlowBlock.rootNodes.forEach((child) => {
+      extractViewTree(
+        child,
+        childrenTree,
+        deferBlocks,
+        controlFlowBlocks,
+        rootId,
+        getComponent,
+        getDirectives,
+        getDirectiveMetadata,
+      );
+    });
+
+    const elementName = `@${currentControlFlowBlock.type}`;
+    const controlFlowBlockTreeNode = {
+      children: childrenTree,
+      component: null,
+      directives: [],
+      element: elementName,
+      nativeElement: undefined,
+      hydration: null,
+      defer: null,
+    } satisfies ComponentTreeNode;
+
+    currentControlFlowBlock?.rootNodes.forEach((child) => nodesToSkip.add(child));
+    appendTo.push(controlFlowBlockTreeNode);
   }
 }
 
@@ -229,11 +311,13 @@ export class RTreeStrategy {
   build(element: Element, rootId: number = 0): ComponentTreeNode[] {
     const ng = ngDebugClient();
     const deferBlocks = ng.ɵgetDeferBlocks?.(element) ?? [];
+    const controlFlowBlocks = ng.ɵgetControlFlowBlocks?.(element) ?? [];
 
     return extractViewTree(
       element,
       [],
       new DeferBlocksIterator(deferBlocks),
+      new ControlFlowBlocksIterator(controlFlowBlocks),
       rootId,
       ng.getComponent,
       ng.getDirectives,
@@ -246,6 +330,22 @@ class DeferBlocksIterator {
   public currentIndex = 0;
   private blocks: DeferBlockData[] = [];
   constructor(blocks: DeferBlockData[]) {
+    this.blocks = blocks;
+  }
+
+  advance() {
+    this.currentIndex++;
+  }
+
+  get currentBlock() {
+    return this.blocks[this.currentIndex];
+  }
+}
+
+class ControlFlowBlocksIterator {
+  public currentIndex = 0;
+  private blocks: ControlFlowBlockData[] = [];
+  constructor(blocks: ControlFlowBlockData[]) {
     this.blocks = blocks;
   }
 
