@@ -38,7 +38,6 @@ import {
   TransferState,
   Type,
   VERSION,
-  EnvironmentProviders,
   ApplicationRef,
   ɵConsole as Console,
   ComponentRef,
