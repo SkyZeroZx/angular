@@ -14,6 +14,11 @@
       "version": "22.0.0",
       "description": "Adds 'strictTemplates: true' in tsconfig.json.",
       "factory": "./bundles/strict-templates.cjs#migrate"
+    },
+    "provide-incremental-hydration": {
+      "version": "22.0.0",
+      "description": "Updates 'provideClientHydration' calls: adds 'withNoIncrementalHydration' to preserve pre-v22 behavior and removes redundant 'withIncrementalHydration' since incremental hydration is now enabled by default.",
+      "factory": "./bundles/provide-incremental-hydration.cjs#migrate"
     }
   }
 }
