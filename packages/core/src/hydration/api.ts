@@ -58,6 +58,7 @@ import {
   isIncrementalHydrationEnabled,
   NGH_DATA_KEY,
   processBlockData,
+  setIsIncrementalHydrationRuntimeEnabled,
   verifySsrContentsIntegrity,
 } from './utils';
 import {enableFindMatchingDehydratedViewImpl} from './views';
@@ -139,6 +140,9 @@ function enableIncrementalHydrationRuntimeSupport() {
     isIncrementalHydrationRuntimeSupportEnabled = true;
     enableRetrieveDeferBlockDataImpl();
   }
+  // Always set the runtime flag, even if the impl was already enabled
+  // (e.g., between SSR and client phases in the same process).
+  setIsIncrementalHydrationRuntimeEnabled(true);
 }
 
 /**
@@ -232,6 +236,10 @@ export function withDomHydration(): EnvironmentProviders {
         // i18n support is enabled by calling withI18nSupport(), but there's
         // no way to turn it off (e.g. for tests), so we turn it off by default.
         setIsI18nHydrationSupportEnabled(false);
+
+        // Reset the incremental hydration runtime flag. It will be set to `true`
+        // by `withIncrementalHydration()`'s ENVIRONMENT_INITIALIZER if used.
+        setIsIncrementalHydrationRuntimeEnabled(false);
 
         if (typeof ngServerMode !== 'undefined' && ngServerMode) {
           // Since this function is used across both server and client,
@@ -354,6 +362,10 @@ export function withI18nSupport(): Provider[] {
  * Requires hydration to be enabled separately.
  * Enabling incremental hydration also enables event replay for the entire app.
  * @see [Incremental Hydration](guide/incremental-hydration#how-do-you-enable-incremental-hydration-in-angular)
+ *
+ * @deprecated now is enabled by default when `provideClientHydration()` is used, so there is no need to use this function. The function will be removed in a future version.
+ * If you want to disable incremental hydration, use `withNoIncrementalHydration()` instead.
+ * @see {@link withNoIncrementalHydration}
  */
 export function withIncrementalHydration(): Provider[] {
   const providers: Provider[] = [

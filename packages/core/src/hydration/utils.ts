@@ -411,6 +411,27 @@ export function isIncrementalHydrationEnabled(injector: Injector): boolean {
   });
 }
 
+/**
+ * Module-level flag that indicates whether the incremental hydration
+ * runtime support has been activated (i.e., `withIncrementalHydration()`
+ * was used). This is distinct from the `IS_INCREMENTAL_HYDRATION_ENABLED`
+ * token which controls server-side annotation and defaults to `true`.
+ *
+ * On the client, this flag is used to determine whether the full
+ * incremental hydration runtime (trigger processing, event replay,
+ * dehydrated block registry) is available. When `false`, defer blocks
+ * with hydrate triggers fall back to regular trigger behavior.
+ */
+let _isIncrementalHydrationRuntimeEnabled = false;
+
+export function setIsIncrementalHydrationRuntimeEnabled(enabled: boolean): void {
+  _isIncrementalHydrationRuntimeEnabled = enabled;
+}
+
+export function isIncrementalHydrationRuntimeEnabled(): boolean {
+  return _isIncrementalHydrationRuntimeEnabled;
+}
+
 let incrementalHydrationEnabledWarned = false;
 export function resetIncrementalHydrationEnabledWarnedForTests() {
   incrementalHydrationEnabledWarned = false;
@@ -424,9 +445,9 @@ export function warnIncrementalHydrationNotConfigured(): void {
       formatRuntimeError(
         RuntimeErrorCode.MISCONFIGURED_INCREMENTAL_HYDRATION,
         'Angular has detected that some `@defer` blocks use `hydrate` triggers, ' +
-          'but incremental hydration was not enabled. Please ensure that the `withIncrementalHydration()` ' +
-          'call is added as an argument for the `provideClientHydration()` function call ' +
-          'in your application config.',
+          'but incremental hydration was not enabled. Please ensure that the ' +
+          '`withNoIncrementalHydration()` call is not present in the `provideClientHydration()` ' +
+          'function call in your application config.',
       ),
     );
   }

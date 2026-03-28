@@ -66,10 +66,17 @@ export const EVENT_REPLAY_QUEUE = new InjectionToken<EventReplayQueue>(
 
 /**
  * Internal token that indicates whether incremental hydration support
- * is enabled.
+ * is enabled. Defaults to `true` so that server-side annotation of
+ * defer blocks with hydrate triggers works automatically when
+ * `provideClientHydration()` is used. The client-side runtime support
+ * (trigger processing, event replay) is enabled separately via
+ * `withIncrementalHydration()`.
  */
 export const IS_INCREMENTAL_HYDRATION_ENABLED = new InjectionToken<boolean>(
   typeof ngDevMode === 'undefined' || ngDevMode ? 'IS_INCREMENTAL_HYDRATION_ENABLED' : '',
+  {
+    factory: () => true,
+  },
 );
 
 /**

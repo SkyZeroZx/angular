@@ -47,7 +47,7 @@ import {
 import {APP_ID} from '../application/application_tokens';
 import {performanceMarkFeature} from '../util/performance';
 import {triggerHydrationFromBlockName} from '../defer/triggering';
-import {isIncrementalHydrationEnabled} from './utils';
+import {isIncrementalHydrationRuntimeEnabled} from './utils';
 
 /** Apps in which we've enabled event replay.
  *  This is to prevent initializing event replay more than once per app.
@@ -84,7 +84,7 @@ export function withEventReplay(): Provider[] {
           // is enabled, but there are no events configured in this application, in which case
           // we don't activate this feature, since there are no events to replay.
           const appId = inject(APP_ID);
-          isEnabled = !!window._ejsas?.[appId];
+          isEnabled = typeof window !== 'undefined' && !!window._ejsas?.[appId];
         }
         if (isEnabled) {
           performanceMarkFeature('NgEventReplay');
@@ -181,8 +181,8 @@ export function withEventReplay(): Provider[] {
               // This removes event listeners registered through the container manager,
               // as listeners registered on `document.body` might never be removed if we
               // don't clean up the contract.
-              if (isIncrementalHydrationEnabled(injector)) {
-                // When incremental hydration is enabled, we cannot clean up the event
+              if (isIncrementalHydrationRuntimeEnabled()) {
+                // When incremental hydration runtime is active, we cannot clean up the event
                 // contract immediately because we're unaware if there are any deferred
                 // blocks to hydrate. We can only schedule a contract cleanup when the
                 // app is destroyed.

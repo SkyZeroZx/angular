@@ -56,6 +56,7 @@ import {
   warnIncrementalHydrationNotConfigured,
   assertSsrIdDefined,
   isIncrementalHydrationEnabled,
+  isIncrementalHydrationRuntimeEnabled,
 } from '../hydration/utils';
 import {ɵɵdeferEnableTimerScheduling, renderPlaceholder} from './rendering';
 
@@ -203,7 +204,7 @@ export function ɵɵdefer(
   setLDeferBlockDetails(lView, adjustedIndex, lDetails);
 
   let registry: DehydratedBlockRegistry | null = null;
-  if (ssrUniqueId !== null && incrementalHydrationEnabled) {
+  if (ssrUniqueId !== null && isIncrementalHydrationRuntimeEnabled()) {
     // Store this defer block in the registry, to have an access to
     // internal data structures from hydration runtime code.
     registry = injector.get(DEHYDRATED_BLOCK_REGISTRY);

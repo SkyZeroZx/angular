@@ -20,6 +20,7 @@ import {
   assertSsrIdDefined,
   getParentBlockHydrationQueue,
   isIncrementalHydrationEnabled,
+  isIncrementalHydrationRuntimeEnabled,
 } from '../hydration/utils';
 import {PendingTasks} from '../pending_tasks';
 import {PendingTasksInternal} from '../pending_tasks_internal';
@@ -628,7 +629,11 @@ function shouldAttachRegularTrigger(lView: LView, tNode: TNode): boolean {
   const lDetails = getLDeferBlockDetails(lView, tNode);
   const wasServerSideRendered = lDetails[SSR_UNIQUE_ID] !== null;
 
-  if (_hasHydrateTriggers && wasServerSideRendered && incrementalHydrationEnabled) {
+  // Only suppress regular triggers if the incremental hydration runtime is
+  // actually active (i.e., `withIncrementalHydration()` was used). When the
+  // token defaults to `true` but the runtime is not loaded, defer blocks
+  // fall back to regular trigger behavior.
+  if (_hasHydrateTriggers && wasServerSideRendered && isIncrementalHydrationRuntimeEnabled()) {
     return false;
   }
   return true;

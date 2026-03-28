@@ -30,6 +30,7 @@ export {
   withI18nSupport,
   withIncrementalHydration,
   withNoHttpTransferCache,
+  withNoIncrementalHydration,
 } from './hydration';
 export {
   DomSanitizer,

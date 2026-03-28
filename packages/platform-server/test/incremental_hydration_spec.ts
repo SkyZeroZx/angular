@@ -40,6 +40,7 @@ import {
   provideClientHydration,
   withEventReplay,
   withIncrementalHydration,
+  withNoIncrementalHydration,
 } from '@angular/platform-browser';
 import {provideRouter, RouterLink, RouterOutlet, Routes} from '@angular/router';
 import {getAppContents, prepareEnvironmentAndHydrate, resetTViewsFor} from './dom_utils';
@@ -2987,8 +2988,8 @@ describe('platform-server partial hydration integration', () => {
       const appId = 'custom-app-id';
       const providers = [{provide: APP_ID, useValue: appId}];
 
-      // Empty list, `withIncrementalHydration()` is not included intentionally.
-      const hydrationFeatures = () => [];
+      // Use `withNoIncrementalHydration()` to explicitly disable incremental hydration.
+      const hydrationFeatures = () => [withNoIncrementalHydration()];
       const consoleSpy = spyOn(console, 'warn');
       resetIncrementalHydrationEnabledWarnedForTests();
 
@@ -3026,8 +3027,8 @@ describe('platform-server partial hydration integration', () => {
       const doc = getDocument();
       await prepareEnvironmentAndHydrate(doc, html, SimpleComponent, {
         envProviders: [...providers, {provide: PLATFORM_ID, useValue: 'browser'}],
-        // Empty list, `withIncrementalHydration()` is not included intentionally.
-        hydrationFeatures: () => [],
+        // Use `withNoIncrementalHydration()` to explicitly disable incremental hydration.
+        hydrationFeatures: () => [withNoIncrementalHydration()],
       });
 
       expect(consoleSpy).toHaveBeenCalledTimes(1);

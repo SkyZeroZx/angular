@@ -21,6 +21,7 @@ import {
   ɵwithI18nSupport,
   ɵZONELESS_ENABLED as ZONELESS_ENABLED,
   ɵwithIncrementalHydration,
+  ɵIS_INCREMENTAL_HYDRATION_ENABLED as IS_INCREMENTAL_HYDRATION_ENABLED,
   ɵIS_ENABLED_BLOCKING_INITIAL_NAVIGATION as IS_ENABLED_BLOCKING_INITIAL_NAVIGATION,
   provideStabilityDebugging,
 } from '@angular/core';
@@ -38,6 +39,7 @@ export enum HydrationFeatureKind {
   I18nSupport,
   EventReplay,
   IncrementalHydration,
+  NoIncrementalHydration,
 }
 
 /**
@@ -128,20 +130,40 @@ export function withEventReplay(): HydrationFeature<HydrationFeatureKind.EventRe
 /**
  * Enables support for incremental hydration using the `hydrate` trigger syntax.
  *
- * @usageNotes
+ * Incremental hydration is enabled by default when using `provideClientHydration()`.
+ * This function can be used explicitly, but is no longer required.
  *
- * Basic example of how you can enable incremental hydration in your application when
- * the `bootstrapApplication` function is used:
- * ```ts
- * bootstrapApplication(AppComponent, {
- *   providers: [provideClientHydration(withIncrementalHydration())]
- * });
- * ```
  * @publicApi 20.0
  * @see {@link provideClientHydration}
+ * @see {@link withNoIncrementalHydration}
  */
 export function withIncrementalHydration(): HydrationFeature<HydrationFeatureKind.IncrementalHydration> {
   return hydrationFeature(HydrationFeatureKind.IncrementalHydration, ɵwithIncrementalHydration());
+}
+
+/**
+ * Disables incremental hydration support. When used, `@defer` blocks with `hydrate` triggers
+ * will not be incrementally hydrated and will follow the standard defer loading behavior.
+ *
+ * @usageNotes
+ *
+ * Basic example of how you can disable incremental hydration:
+ * ```ts
+ * bootstrapApplication(AppComponent, {
+ *   providers: [provideClientHydration(withNoIncrementalHydration())]
+ * });
+ * ```
+ * @publicApi
+ * @see {@link provideClientHydration}
+ * @see {@link withIncrementalHydration}
+ */
+export function withNoIncrementalHydration(): HydrationFeature<HydrationFeatureKind.NoIncrementalHydration> {
+  // Provides IS_INCREMENTAL_HYDRATION_ENABLED as false to override the token's
+  // factory default of true. This disables server-side annotation of defer blocks
+  // with hydrate triggers.
+  return hydrationFeature(HydrationFeatureKind.NoIncrementalHydration, [
+    {provide: IS_INCREMENTAL_HYDRATION_ENABLED, useValue: false},
+  ]);
 }
 
 /**
@@ -183,11 +205,14 @@ function provideEnabledBlockingInitialNavigationDetector(): Provider[] {
  * * [`HttpClient`](api/common/http/HttpClient) response caching while running on the server and
  * transferring this cache to the client to avoid extra HTTP requests. Learn more about data caching
  * [here](guide/ssr#caching-data-when-using-httpclient).
+ * * Incremental hydration support for `@defer` blocks with `hydrate` triggers.
+ * Learn more about it [here](guide/incremental-hydration).
  *
  * These functions allow you to disable some of the default features or enable new ones:
  *
  * * {@link withNoHttpTransferCache} to disable HTTP transfer cache
  * * {@link withHttpTransferCacheOptions} to configure some HTTP transfer cache options
+ * * {@link withNoIncrementalHydration} to disable incremental hydration
  * * {@link withI18nSupport} to enable hydration support for i18n blocks
  * * {@link withEventReplay} to enable support for replaying user events
  *
@@ -214,6 +239,7 @@ function provideEnabledBlockingInitialNavigationDetector(): Provider[] {
  *
  * @see {@link withNoHttpTransferCache}
  * @see {@link withHttpTransferCacheOptions}
+ * @see {@link withNoIncrementalHydration}
  * @see {@link withI18nSupport}
  * @see {@link withEventReplay}
  *
@@ -249,6 +275,18 @@ export function provideClientHydration(
     throw new RuntimeError(
       RuntimeErrorCode.HYDRATION_CONFLICTING_FEATURES,
       'Configuration error: found both withHttpTransferCacheOptions() and withNoHttpTransferCache() in the same call to provideClientHydration(), which is a contradiction.',
+    );
+  }
+
+  if (
+    typeof ngDevMode !== 'undefined' &&
+    ngDevMode &&
+    featuresKind.has(HydrationFeatureKind.IncrementalHydration) &&
+    featuresKind.has(HydrationFeatureKind.NoIncrementalHydration)
+  ) {
+    throw new RuntimeError(
+      RuntimeErrorCode.HYDRATION_CONFLICTING_FEATURES,
+      'Configuration error: found both withIncrementalHydration() and withNoIncrementalHydration() in the same call to provideClientHydration(), which is a contradiction.',
     );
   }
 
