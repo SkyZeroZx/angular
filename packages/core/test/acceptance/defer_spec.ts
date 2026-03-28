@@ -39,6 +39,12 @@ import {
   ViewChildren,
   ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR,
 } from '../../src/core';
+import {
+  DeferBlockLoadingInterceptor,
+  DeferDependencyFn,
+  DEFER_BLOCK_LOADING_INTERCEPTOR,
+  provideDeferBlockLoadingInterceptor,
+} from '../../src/defer/loading_interceptor';
 import {IDLE_SERVICE, IdleService, provideIdleServiceWith} from '../../src/defer/idle_service';
 import {IdleScheduler} from '../../src/defer/idle_scheduler';
 import {TimerScheduler} from '../../src/defer/timer_scheduler';
@@ -1646,6 +1652,226 @@ describe('@defer', () => {
       expect(fixture.nativeElement.innerHTML.replaceAll('<!--container-->', '')).toBe(
         '<cmp-a>CmpA</cmp-a><cmp-a>CmpA</cmp-a>',
       );
+    });
+  });
+
+  describe('DeferBlockLoadingInterceptor', () => {
+    @Component({
+      selector: 'nested-cmp',
+      template: 'Nested',
+
+      changeDetection: ChangeDetectionStrategy.Eager,
+    })
+    class NestedCmp {}
+
+    function makeFixture(extraProviders: any[] = []) {
+      @Component({
+        selector: 'simple-app',
+        imports: [NestedCmp],
+        template: `
+          @defer (when isVisible) {
+            <nested-cmp />
+          } @loading {
+            Loading...
+          } @placeholder {
+            Placeholder!
+          } @error {
+            Error!
+          }
+        `,
+
+        changeDetection: ChangeDetectionStrategy.Eager,
+      })
+      class MyCmp {
+        isVisible = false;
+      }
+
+      TestBed.configureTestingModule({
+        rethrowApplicationErrors: false,
+        providers: extraProviders,
+      });
+
+      clearDirectiveDefs(MyCmp);
+      return TestBed.createComponent(MyCmp);
+    }
+
+    it('should use the default pass-through interceptor when none is configured', async () => {
+      const deferDepsInterceptor = {
+        intercept() {
+          return () => [dynamicImportOf(NestedCmp)];
+        },
+      };
+
+      // Use the dev-mode interceptor to supply a working dep without a provider for
+      // the loading interceptor — the default should be used.
+      const fixture = makeFixture([
+        {provide: ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR, useValue: deferDepsInterceptor},
+      ]);
+      fixture.detectChanges();
+
+      fixture.componentInstance.isVisible = true;
+      fixture.detectChanges();
+
+      await allPendingDynamicImports();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.outerHTML).toContain('Nested');
+    });
+
+    it('should invoke the custom interceptor and use its returned promises', async () => {
+      let interceptorInvoked = false;
+
+      @Injectable()
+      class CustomInterceptor implements DeferBlockLoadingInterceptor {
+        intercept(loadDependencies: DeferDependencyFn): ReturnType<DeferDependencyFn> {
+          interceptorInvoked = true;
+          return loadDependencies();
+        }
+      }
+
+      const deferDepsInterceptor = {
+        intercept() {
+          return () => [dynamicImportOf(NestedCmp)];
+        },
+      };
+
+      const fixture = makeFixture([
+        {provide: ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR, useValue: deferDepsInterceptor},
+        CustomInterceptor,
+        provideDeferBlockLoadingInterceptor(CustomInterceptor),
+      ]);
+      fixture.detectChanges();
+
+      fixture.componentInstance.isVisible = true;
+      fixture.detectChanges();
+
+      await allPendingDynamicImports();
+      fixture.detectChanges();
+
+      expect(interceptorInvoked).toBeTrue();
+      expect(fixture.nativeElement.outerHTML).toContain('Nested');
+    });
+
+    it('should allow an interceptor to retry by calling loadDependencies() again', async () => {
+      let callCount = 0;
+
+      // Dev-mode interceptor simulates a dependency that fails on the 1st call
+      // and succeeds on the 2nd (mimics a transient network error).
+      const deferDepsInterceptor = {
+        intercept() {
+          return () => {
+            callCount++;
+            if (callCount === 1) return [failedDynamicImport()];
+            return [dynamicImportOf(NestedCmp)];
+          };
+        },
+      };
+
+      // Interceptor that retries once by calling loadDependencies() again.
+      @Injectable()
+      class RetryInterceptor implements DeferBlockLoadingInterceptor {
+        intercept(loadDependencies: DeferDependencyFn): ReturnType<DeferDependencyFn> {
+          return loadDependencies().map((dep, index) => {
+            if (!(dep instanceof Promise)) return dep;
+            return dep.catch(() => {
+              // Re-invoke to retry. In production, use retryLoadDeferDependencies()
+              // for cache-busted retries that bypass the browser module cache.
+              const freshDep = loadDependencies()[index];
+              return freshDep instanceof Promise ? freshDep : Promise.resolve(freshDep);
+            });
+          });
+        }
+      }
+
+      const fixture = makeFixture([
+        {provide: ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR, useValue: deferDepsInterceptor},
+        RetryInterceptor,
+        provideDeferBlockLoadingInterceptor(RetryInterceptor),
+      ]);
+      fixture.detectChanges();
+
+      fixture.componentInstance.isVisible = true;
+      fixture.detectChanges();
+
+      // Wait for initial failure + retry to resolve.
+      // Two awaits needed: the first covers the original import()'s setTimeout(0)
+      // rejection, and the second covers the retry's setTimeout(0) resolution
+      // (scheduled from inside the .catch() handler).
+      await allPendingDynamicImports();
+      await allPendingDynamicImports();
+      fixture.detectChanges();
+
+      // First call failed, second call succeeded.
+      expect(callCount).toBe(2);
+      // Despite the initial failure, the retry should have succeeded.
+      expect(fixture.nativeElement.outerHTML).toContain('Nested');
+    });
+
+    it('should render @error block when the interceptor does not recover from failure', async () => {
+      @Injectable()
+      class AlwaysFailInterceptor implements DeferBlockLoadingInterceptor {
+        intercept(loadDependencies: DeferDependencyFn): ReturnType<DeferDependencyFn> {
+          // Force every dependency to reject, regardless of original outcome.
+          return loadDependencies().map(
+            () => Promise.reject(new Error('interceptor rejected')),
+          );
+        }
+      }
+
+      const deferDepsInterceptor = {
+        intercept() {
+          return () => [dynamicImportOf(NestedCmp)];
+        },
+      };
+
+      const fixture = makeFixture([
+        {provide: ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR, useValue: deferDepsInterceptor},
+        AlwaysFailInterceptor,
+        provideDeferBlockLoadingInterceptor(AlwaysFailInterceptor),
+      ]);
+      fixture.detectChanges();
+
+      fixture.componentInstance.isVisible = true;
+      fixture.detectChanges();
+
+      await allPendingDynamicImports();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.outerHTML).toContain('Error!');
+    });
+
+    it('should inject DEFER_BLOCK_LOADING_INTERCEPTOR token directly', async () => {
+      let tokenInjected = false;
+
+      @Injectable()
+      class DirectTokenInterceptor implements DeferBlockLoadingInterceptor {
+        intercept(loadDependencies: DeferDependencyFn): ReturnType<DeferDependencyFn> {
+          tokenInjected = true;
+          return loadDependencies();
+        }
+      }
+
+      const deferDepsInterceptor = {
+        intercept() {
+          return () => [dynamicImportOf(NestedCmp)];
+        },
+      };
+
+      const fixture = makeFixture([
+        {provide: ɵDEFER_BLOCK_DEPENDENCY_INTERCEPTOR, useValue: deferDepsInterceptor},
+        DirectTokenInterceptor,
+        {provide: DEFER_BLOCK_LOADING_INTERCEPTOR, useExisting: DirectTokenInterceptor},
+      ]);
+      fixture.detectChanges();
+
+      fixture.componentInstance.isVisible = true;
+      fixture.detectChanges();
+
+      await allPendingDynamicImports();
+      fixture.detectChanges();
+
+      expect(tokenInjected).toBeTrue();
+      expect(fixture.nativeElement.outerHTML).toContain('Nested');
     });
   });
 

@@ -597,6 +597,14 @@ export class DefaultIterableDiffer<V> implements IterableDiffer<V>, IterableChan
 }
 
 // @public
+export interface DeferBlockLoadingInterceptor {
+    intercept(loadDependencies: DeferDependencyFn): ReturnType<DeferDependencyFn>;
+}
+
+// @public
+export type DeferDependencyFn = () => Array<Promise<unknown> | unknown>;
+
+// @public
 export interface DestroyableInjector extends Injector {
     // (undocumented)
     destroy(): void;
@@ -1501,6 +1509,9 @@ export function provideCheckNoChangesConfig(options: {
 }): EnvironmentProviders;
 
 // @public
+export function provideDeferBlockLoadingInterceptor(useExisting: AbstractType<DeferBlockLoadingInterceptor> | InjectionToken<DeferBlockLoadingInterceptor>): EnvironmentProviders;
+
+// @public
 export function provideEnvironmentInitializer(initializerFn: () => void): EnvironmentProviders;
 
 // @public
@@ -1750,6 +1761,9 @@ type ResponseInit_2 = {
     -readonly [P in keyof globalThis.ResponseInit]: globalThis.ResponseInit[P];
 };
 export { ResponseInit_2 as ResponseInit }
+
+// @public
+export function retryLoadDeferDependencies(loadDependencies: DeferDependencyFn, index: number, attempt: number): Promise<unknown>;
 
 // @public
 export function runInInjectionContext<ReturnT>(injector: Injector, fn: () => ReturnT): ReturnT;

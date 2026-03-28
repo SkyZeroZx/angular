@@ -65,6 +65,12 @@ export {
   Predicate,
 } from './debug/debug_node';
 export {IdleService, provideIdleServiceWith} from './defer/idle_service';
+export {
+  DeferBlockLoadingInterceptor,
+  DeferDependencyFn,
+  provideDeferBlockLoadingInterceptor,
+  retryLoadDeferDependencies,
+} from './defer/loading_interceptor';
 export * from './di';
 export {DOCUMENT} from './document';
 export {ErrorHandler, provideBrowserGlobalErrorListeners} from './error_handler';

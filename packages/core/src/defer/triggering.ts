@@ -62,6 +62,7 @@ import {
   renderDeferStateAfterResourceLoading,
   renderPlaceholder,
 } from './rendering';
+import {DEFER_BLOCK_LOADING_INTERCEPTOR} from './loading_interceptor';
 import {onTimer} from './timer_scheduler';
 import {
   addDepsToRegistry,
@@ -219,8 +220,11 @@ export function triggerResourceLoading(
     return tDetails.loadingPromise;
   }
 
+  // Allow users to customize how dependencies are loaded (e.g. retry on failure).
+  const depsToLoad = injector.get(DEFER_BLOCK_LOADING_INTERCEPTOR).intercept(dependenciesFn);
+
   // Start downloading of defer block dependencies.
-  tDetails.loadingPromise = Promise.allSettled(dependenciesFn()).then((results) => {
+  tDetails.loadingPromise = Promise.allSettled(depsToLoad).then((results) => {
     let failed = false;
     const directiveDefs: DirectiveDefList = [];
     const pipeDefs: PipeDefList = [];

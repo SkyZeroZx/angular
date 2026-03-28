@@ -19,6 +19,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
+            
             "externalDependencies": ["xhr2"],
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
@@ -49,6 +50,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "hmr": false
+          },
           "configurations": {
             "production": {
               "buildTarget": "dev-app:build:production"
