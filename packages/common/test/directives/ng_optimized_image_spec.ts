@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.dev/license
  */
 
-import {ChangeDetectionStrategy, Component, PLATFORM_ID, Provider, Type} from '@angular/core';
+import {ChangeDetectionStrategy, Component, PLATFORM_ID, Provider, signal, Type} from '@angular/core';
 import {ComponentFixture, TestBed} from '@angular/core/testing';
 import {DomSanitizer, SafeResourceUrl} from '@angular/platform-browser';
 import {isBrowser, isNode, withHead} from '@angular/private/testing';
@@ -1312,6 +1312,122 @@ describe('Image directive', () => {
       img.dispatchEvent(new Event('load'));
       fixture.detectChanges();
       expect(parseInlineStyles(img).has('background-image')).toBe(false);
+    });
+
+    it('should remove placeholder when ngSrc and placeholder inputs change', async () => {
+      @Component({
+        selector: 'test-cmp',
+        standalone: false,
+        template: `<img [ngSrc]="ngSrc()" width="400" height="300" [placeholder]="placeholder()" />`,
+      })
+      class TestComponent {
+        ngSrc = signal('path/img.png');
+        placeholder = signal('data:image/png;base64,iVBORw0KGgoAAAANSUhEU');
+      }
+      setupTestingModule({component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      await fixture.whenStable();
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const img = nativeElement.querySelector('img')!;
+
+      // Initially, the placeholder blur should be present.
+      let styles = parseInlineStyles(img);
+      expect(styles.get('filter')).toBe(`blur(${PLACEHOLDER_BLUR_AMOUNT}px)`);
+      expect(styles.has('background-image')).toBe(true);
+
+      // Simulate image load — placeholder should be removed.
+      img.dispatchEvent(new Event('load'));
+      await fixture.whenStable();
+      styles = parseInlineStyles(img);
+      expect(styles.has('background-image')).toBe(false);
+      expect(styles.get('filter')).toBeUndefined();
+
+      // Change both ngSrc and placeholder to simulate dynamic input changes.
+      fixture.componentInstance.placeholder.set(
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEU_changed',
+      );
+      fixture.componentInstance.ngSrc.set('path/img2.png');
+      await fixture.whenStable();
+
+      // Placeholder blur should be shown again for the new image.
+      styles = parseInlineStyles(img);
+      expect(styles.get('filter')).toBe(`blur(${PLACEHOLDER_BLUR_AMOUNT}px)`);
+
+      // Simulate load of the new image — placeholder should be removed again.
+      img.dispatchEvent(new Event('load'));
+      await fixture.whenStable();
+      styles = parseInlineStyles(img);
+      expect(styles.has('background-image')).toBe(false);
+      expect(styles.get('filter')).toBeUndefined();
+    });
+
+    it('should remove placeholder on error when ngSrc changes', async () => {
+      @Component({
+        selector: 'test-cmp',
+        standalone: false,
+        template: `<img [ngSrc]="ngSrc()" width="400" height="300" [placeholder]="placeholder()" />`,
+      })
+      class TestComponent {
+        ngSrc = signal('path/img.png');
+        placeholder = signal('data:image/png;base64,iVBORw0KGgoAAAANSUhEU');
+      }
+      setupTestingModule({component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      await fixture.whenStable();
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const img = nativeElement.querySelector('img')!;
+
+      // Load initial image.
+      img.dispatchEvent(new Event('load'));
+      await fixture.whenStable();
+
+      // Change inputs.
+      fixture.componentInstance.placeholder.set(
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEU_changed',
+      );
+      fixture.componentInstance.ngSrc.set('path/broken.png');
+      await fixture.whenStable();
+
+      // Placeholder should be shown.
+      let styles = parseInlineStyles(img);
+      expect(styles.get('filter')).toBe(`blur(${PLACEHOLDER_BLUR_AMOUNT}px)`);
+
+      // Simulate error — placeholder should be removed.
+      img.dispatchEvent(new Event('error'));
+      await fixture.whenStable();
+      styles = parseInlineStyles(img);
+      expect(styles.has('background-image')).toBe(false);
+      expect(styles.get('filter')).toBeUndefined();
+    });
+
+    it('should clean up stale listeners when placeholder changes multiple times', async () => {
+      const removeEventListenerSpy = spyOn(HTMLImageElement.prototype, 'removeEventListener');
+      @Component({
+        selector: 'test-cmp',
+        standalone: false,
+        template: `<img [ngSrc]="ngSrc()" width="400" height="300" [placeholder]="placeholder()" />`,
+      })
+      class TestComponent {
+        ngSrc = signal('path/img.png');
+        placeholder = signal('data:image/png;base64,placeholder1');
+      }
+      setupTestingModule({component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      await fixture.whenStable();
+
+      // Change placeholder — should clean up old listeners and register new ones.
+      fixture.componentInstance.placeholder.set('data:image/png;base64,placeholder2');
+      fixture.componentInstance.ngSrc.set('path/img2.png');
+      await fixture.whenStable();
+
+      // Old listeners should have been removed before new ones were added.
+      const removeLoadCalls = removeEventListenerSpy.calls
+        .all()
+        .filter((info) => info.args[0] === 'load').length;
+      expect(removeLoadCalls).toBeGreaterThan(0);
+
+      // Destroying should clean up remaining listeners.
+      fixture.destroy();
     });
 
     it('should use the placeholderResolution set in imageConfig', () => {

@@ -280,6 +280,10 @@ export class NgOptimizedImage implements OnInit, OnChanges {
   // Do not assign it to `null` to avoid having a redundant property in the production bundle.
   private lcpObserver?: LCPImageObserver;
 
+  // Stores the cleanup function for placeholder load/error event listeners.
+  // This allows us to remove stale listeners when the placeholder input changes.
+  private placeholderCleanupFn: VoidFunction | null = null;
+
   /**
    * Calculate the rewritten `src` once and store it.
    * This is needed to avoid repetitive calculations and make sure the directive cleanup in the
@@ -414,6 +418,12 @@ export class NgOptimizedImage implements OnInit, OnChanges {
     // See also: https://github.com/angular/angular/issues/67055#issuecomment-3898513831
     this.destroyRef.onDestroy(() => {
       this.renderer.removeAttribute(this.imgElement, 'loading');
+    });
+
+    // Clean up placeholder load/error listeners on destroy to avoid leaking.
+    this.destroyRef.onDestroy(() => {
+      this.placeholderCleanupFn?.();
+      this.placeholderCleanupFn = null;
     });
   }
 
@@ -559,6 +569,10 @@ export class NgOptimizedImage implements OnInit, OnChanges {
           });
         }
       }
+    }
+
+    if (changes['placeholder'] && !changes['placeholder'].isFirstChange() && this.placeholder) {
+      this.removePlaceholderOnLoad(this.imgElement);
     }
 
     if (
@@ -750,10 +764,16 @@ export class NgOptimizedImage implements OnInit, OnChanges {
   }
 
   private removePlaceholderOnLoad(img: HTMLImageElement): void {
+    // Clean up any existing placeholder listeners before registering new ones
+    // to avoid leaking event listeners when the placeholder input changes.
+    this.placeholderCleanupFn?.();
+    this.placeholderCleanupFn = null;
+
     const callback = () => {
       const changeDetectorRef = this.injector.get(ChangeDetectorRef);
       removeLoadListenerFn();
       removeErrorListenerFn();
+      this.placeholderCleanupFn = null;
       this.placeholder = false;
       changeDetectorRef.markForCheck();
     };
@@ -761,13 +781,10 @@ export class NgOptimizedImage implements OnInit, OnChanges {
     const removeLoadListenerFn = this.renderer.listen(img, 'load', callback);
     const removeErrorListenerFn = this.renderer.listen(img, 'error', callback);
 
-    // Clean up listeners once the view is destroyed, before the image
-    // loads or fails to load, to avoid element from being captured
-    // in memory and redundant change detection.
-    this.destroyRef.onDestroy(() => {
+    this.placeholderCleanupFn = () => {
       removeLoadListenerFn();
       removeErrorListenerFn();
-    });
+    };
 
     callOnLoadIfImageIsLoaded(img, callback);
   }
