@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.dev/license
  */
 
+import {Tab, TabList, TabPanel, Tabs} from '@angular/aria/tabs';
 import {
   afterRenderEffect,
   Component,
@@ -21,12 +22,11 @@ import {
 let idCounter = 0;
 
 /**
- * A simple tabs implementation with proper aria roles.
- *
- * TODO: Consider migrate to Angular Aria Tabs pattern to enable keyboard navigation.
+ * A tabs component built on Angular Aria Tabs for accessible keyboard navigation.
  */
 @Component({
   selector: 'docs-tab-group',
+  imports: [Tab, TabList, TabPanel, Tabs],
   templateUrl: './tab-group.component.html',
   styleUrls: ['./tab-group.component.scss'],
   host: {
@@ -45,8 +45,7 @@ export class TabGroup {
         const id = idCounter++;
 
         return {
-          tabId: `docs-tab-${id}`,
-          tabPanelId: `docs-tab-panel-${id}`,
+          value: `docs-tab-${id}`,
           label: tab.label,
           panel: tab.panel,
         };
@@ -54,7 +53,7 @@ export class TabGroup {
     );
   });
 
-  readonly selectedTab = linkedSignal(() => this.computedTabs()[0]?.tabId);
+  readonly selectedTab = linkedSignal(() => this.computedTabs()[0]?.value);
 
   constructor() {
     afterRenderEffect(() => {

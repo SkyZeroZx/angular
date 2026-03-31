@@ -11,6 +11,8 @@
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
+  cursor: pointer;
+  outline: none;
   transition: background-color 0.3s ease;
 
   &::before {
@@ -33,7 +35,7 @@
     }
   }
 
-  &.docs-tab-active {
+  &[aria-selected='true'] {
     // font gradient
     background-image: var(--pink-to-purple-vertical-gradient);
 
@@ -54,4 +56,8 @@
 
 .docs-tab-panel {
   padding-top: 1rem;
+
+  &[inert] {
+    display: none;
+  }
 }
