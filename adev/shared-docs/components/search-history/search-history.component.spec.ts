@@ -14,7 +14,7 @@ import {provideRouter} from '@angular/router';
 import {SearchHistoryComponent} from './search-history.component';
 import {HistoryItem, SearchHistory} from '../../services';
 import {LOCAL_STORAGE} from '../../providers';
-import {MockLocalStorage} from '../../testing';
+import {MockLocalStorage, timeout} from '../../testing';
 
 // Keep in sync with the template & styles
 const RECENT_CONT_SELECTOR = '.recent';
@@ -56,13 +56,13 @@ async function loadItems(history: SearchHistory) {
     // used for sorting the items array, we
     // update the clock by awaiting a timeout.
     history.addItem(item);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await timeout(5);
   }
 
   const favorite = ITEMS.filter((i) => i.isFavorite);
   for (const item of favorite) {
     history.makeFavorite(item);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await timeout(5);
   }
 
   TestBed.tick();
@@ -74,7 +74,7 @@ describe('SearchHistoryComponent', () => {
   let history: SearchHistory;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       providers: [{provide: LOCAL_STORAGE, useClass: MockLocalStorage}, provideRouter([])],
     });
 

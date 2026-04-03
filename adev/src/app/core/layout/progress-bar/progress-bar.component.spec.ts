@@ -11,6 +11,7 @@ import {ComponentFixture, TestBed} from '@angular/core/testing';
 import {PROGRESS_BAR_DELAY, ProgressBarComponent} from './progress-bar.component';
 import {RouterTestingHarness} from '@angular/router/testing';
 import {provideRouter} from '@angular/router';
+import {timeout} from '@angular/docs';
 
 describe('ProgressBarComponent', () => {
   let component: ProgressBarComponent;
@@ -36,7 +37,7 @@ describe('ProgressBarComponent', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/');
 
-    await new Promise((resolve) => setTimeout(resolve, PROGRESS_BAR_DELAY));
+    await timeout(PROGRESS_BAR_DELAY);
     expect(progressBarCompleteSpy).toHaveBeenCalled();
   });
 });

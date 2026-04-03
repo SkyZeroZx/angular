@@ -14,7 +14,7 @@ import {
   SearchHistory,
 } from './search-history.service';
 import {LOCAL_STORAGE} from '../providers';
-import {MockLocalStorage} from '../testing';
+import {MockLocalStorage, timeout} from '../testing';
 
 const ITEMS: HistoryItem[] = [
   {
@@ -40,7 +40,7 @@ describe('SearchHistory', async () => {
       // Since adding an item sets a timestamp which is later
       // used for sorting the items array, we
       // update the clock by awaiting a timeout.
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await timeout(5);
       service.addItem(item);
     }
   }
@@ -126,7 +126,7 @@ describe('SearchHistory', async () => {
       const id = i.toString();
       ids.push(id);
 
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await timeout(5);
       service.addItem({
         id,
         labelHtml: id,

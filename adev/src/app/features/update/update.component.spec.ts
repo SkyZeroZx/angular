@@ -14,6 +14,7 @@ import {By} from '@angular/platform-browser';
 
 import UpdateComponent from './update.component';
 import {ApplicationComplexity} from './recommendations';
+import {timeout} from '@angular/docs';
 
 describe('UpdateComponent', () => {
   let component: UpdateComponent;
@@ -65,7 +66,7 @@ describe('UpdateComponent', () => {
       await fixture.whenStable();
 
       // Additional wait for marked parsing
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await timeout(300);
 
       const badges = fixture.nativeElement.querySelectorAll('.adev-complexity-badge');
 
