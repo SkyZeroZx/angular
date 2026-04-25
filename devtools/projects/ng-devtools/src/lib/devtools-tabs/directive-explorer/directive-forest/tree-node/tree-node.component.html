@@ -51,6 +51,20 @@
         ({{ forLoop.items.length }} {{ forLoop.items.length === 1 ? 'item' : 'items' }})
       </span>
     }
+  } @else if (BlockType.isIfBlock(block)) {
+    @let ifBlock = block;
+
+    @if (ifBlock) {
+      @if (ifBlock.activeBranchIndex === -1) {
+        <span class="trait">(non-rendered)</span>
+      } @else if (ifBlock.activeBranchIndex === 0) {
+        <span class="trait">(&#64;if)</span>
+      } @else if (ifBlock.activeBranchIndex === ifBlock.branches.length - 1) {
+        <span class="trait">(&#64;else)</span>
+      } @else {
+        <span class="trait">(&#64;else if #{{ ifBlock.activeBranchIndex }})</span>
+      }
+    }
   } @else if (!hydration || hydration.status !== 'dehydrated') {
     <!-- Shown/hidden via CSS -->
     <span class="console-reference trait"> == $ng0 </span>

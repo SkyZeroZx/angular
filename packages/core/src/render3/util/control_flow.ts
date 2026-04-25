@@ -41,9 +41,11 @@ import {
   ControlFlowBlockType,
   DeferBlockData,
   ForLoopBlockData,
+  IfBlockData,
+  IfBranchData,
   RepeaterMetadataShape,
 } from './control_flow_types';
-import {TNode} from '../interfaces/node';
+import {TNode, TNodeFlags} from '../interfaces/node';
 
 /**
  * Gets all of the control flow blocks that are present inside the specified DOM node.
@@ -209,8 +211,131 @@ const forLoopFinder: ControlFlowBlockViewFinder = ({
   } satisfies ForLoopBlockData;
 };
 
+/**
+ * Finds and returns `@if` blocks in a LView.
+ *
+ * The runtime `ɵɵconditional` instruction is shared between `@if` and
+ * `@switch`; we differentiate the two by looking at the compiler-emitted
+ * template function name (`*_Conditional_*` for `@if`, `*_Case_*` for
+ * `@switch`). Only `@if` blocks are returned by this finder; `@switch`
+ * support is not yet implemented and is silently skipped.
+ *
+ * @param config Finder configuration object.
+ */
+function ifBlockFinder({
+  lView,
+  tView,
+  slotIdx,
+}: ControlFlowBlockViewFinderConfig): ControlFlowBlock | null {
+  // Only the very first branch of an `@if` chain carries `isControlFlowStart`.
+  // We use it as the anchor so we don't emit a block per branch.
+  const startTNode = tView.data[slotIdx] as TNode | null;
+  if (
+    startTNode === null ||
+    typeof startTNode !== 'object' ||
+    !(startTNode.flags & TNodeFlags.isControlFlowStart)
+  ) {
+    return null;
+  }
+
+  if (!isIfTemplate(startTNode)) {
+    return null;
+  }
+
+  const startSlot = lView[slotIdx];
+  if (!isLContainer(startSlot)) {
+    return null;
+  }
+
+  const branches: IfBranchData[] = [];
+  let activeBranchIndex = -1;
+
+  // Walk forward over the contiguous run of branch slots. The first slot has
+  // `isControlFlowStart`; subsequent branches (e.g. `@else if`, `@else`) have
+  // `isInControlFlow`.
+  for (let i = slotIdx; i < tView.bindingStartIndex; i++) {
+    const tNode = tView.data[i] as TNode | null;
+    if (tNode === null || typeof tNode !== 'object') {
+      break;
+    }
+
+    const isStart = i === slotIdx;
+    const matchesFlag = isStart
+      ? !!(tNode.flags & TNodeFlags.isControlFlowStart)
+      : !!(tNode.flags & TNodeFlags.isInControlFlow);
+    if (!matchesFlag) {
+      break;
+    }
+
+    const branchSlot = lView[i];
+    if (!isLContainer(branchSlot)) {
+      break;
+    }
+
+    const branchIndex = branches.length;
+    const renderedLView = getRendererLView(branchSlot);
+    const rootNodes: Node[] = [];
+    const isActive = renderedLView !== null;
+
+    if (isActive) {
+      collectNativeNodes(
+        renderedLView![TVIEW],
+        renderedLView!,
+        renderedLView![TVIEW].firstChild,
+        rootNodes,
+      );
+      activeBranchIndex = branchIndex;
+    }
+
+    branches.push({
+      index: branchIndex,
+      isActive,
+      rootNodes,
+    });
+  }
+
+  // Aggregate root nodes across all branches (in practice, only the active one
+  // contributes anything).
+  const allRootNodes: Node[] = [];
+  for (const branch of branches) {
+    allRootNodes.push(...branch.rootNodes);
+  }
+
+  return {
+    type: ControlFlowBlockType.If,
+    activeBranchIndex,
+    branches,
+    hostNode: startSlot[HOST] as Node,
+    rootNodes: allRootNodes,
+  } satisfies IfBlockData;
+}
+
+/**
+ * Distinguishes `@if` template anchors from `@switch` template anchors. The
+ * compiler emits embedded template functions named `<Component>_Conditional_N_Template`
+ * for `@if` / `@else` branches and `<Component>_Case_N_Template` for
+ * `@switch` cases (see `ingestIfBlock` / `ingestSwitchBlock` in the compiler
+ * pipeline). The same `ɵɵconditional` runtime instruction is used for both,
+ * so the template function name is the only available discriminator at
+ * runtime.
+ */
+function isIfTemplate(tNode: TNode): boolean {
+  const embeddedTView = tNode.tView;
+  const templateFn = embeddedTView !== null ? embeddedTView.template : null;
+  if (templateFn === null) {
+    return false;
+  }
+  const templateName = templateFn.name;
+  const parts = templateName.split('_');
+  return parts[parts.length - 3] === 'Conditional' && parts[parts.length - 1] === 'Template';
+}
+
 // Represents all supported control flow block finders.
-const CONTROL_FLOW_BLOCK_FINDERS: ControlFlowBlockViewFinder[] = [deferBlockFinder, forLoopFinder];
+const CONTROL_FLOW_BLOCK_FINDERS: ControlFlowBlockViewFinder[] = [
+  deferBlockFinder,
+  forLoopFinder,
+  ifBlockFinder,
+];
 
 /**
  * Finds all the control flow blocks inside a specific node and view.

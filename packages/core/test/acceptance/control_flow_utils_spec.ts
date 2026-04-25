@@ -5,7 +5,7 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.dev/license
  */
-import {Component} from '../../src/core';
+import {Component, signal} from '../../src/core';
 import {DeferBlockBehavior, DeferBlockState, TestBed} from '../../testing';
 
 import {getControlFlowBlocks} from '../../src/render3/util/control_flow';
@@ -13,6 +13,7 @@ import {
   ControlFlowBlockType,
   DeferBlockData,
   ForLoopBlockData,
+  IfBlockData,
 } from '../../src/render3/util/control_flow_types';
 
 describe('getControlFlowBlocks', () => {
@@ -52,7 +53,9 @@ describe('getControlFlowBlocks', () => {
 describe('getControlFlowBlocks > @defer blocks', () => {
   // Use to narrow down type to `DeferBlockData` for `@defer`-specific tests.
   function getDeferBlocks(node: Node): DeferBlockData[] {
-    return getControlFlowBlocks(node) as DeferBlockData[];
+    return getControlFlowBlocks(node).filter(
+      (b): b is DeferBlockData => b.type === ControlFlowBlockType.Defer,
+    );
   }
 
   beforeEach(() => {
@@ -396,7 +399,9 @@ describe('getControlFlowBlocks > @defer blocks', () => {
 describe('getControlFlowBlocks > @for blocks', () => {
   // Use to narrow down type to `ForLoopBlockData` for `@for`-specific tests.
   function getForLoopBlocks(node: Node): ForLoopBlockData[] {
-    return getControlFlowBlocks(node) as ForLoopBlockData[];
+    return getControlFlowBlocks(node).filter(
+      (b): b is ForLoopBlockData => b.type === ControlFlowBlockType.For,
+    );
   }
 
   it('should get a @for block', async () => {
@@ -587,5 +592,302 @@ describe('getControlFlowBlocks > @for blocks', () => {
       [ControlFlowBlockType.For, 3],
       [ControlFlowBlockType.For, 1],
     ]);
+  });
+});
+
+describe('getControlFlowBlocks > @if blocks', () => {
+  // Use to narrow down type to `IfBlockData` for `@if`-specific tests.
+  function getIfBlocks(node: Node): IfBlockData[] {
+    return getControlFlowBlocks(node).filter(
+      (b): b is IfBlockData => b.type === ControlFlowBlockType.If,
+    );
+  }
+
+  it('should get a single-branch @if block in its rendered state', () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            <p>Hello</p>
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = true;
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const results = getIfBlocks(fixture.nativeElement);
+    expect(results.length).toBe(1);
+    const ifBlock = results[0];
+    expect(ifBlock.type).toBe(ControlFlowBlockType.If);
+    expect(ifBlock.branches.length).toBe(1);
+    expect(ifBlock.activeBranchIndex).toBe(0);
+    expect(ifBlock.branches[0].isActive).toBe(true);
+    expect(ifBlock.hostNode).toBeTruthy();
+  });
+
+  it('should report activeBranchIndex of -1 for a falsy single-branch @if', () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            <p>Hello</p>
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = false;
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.branches.length).toBe(1);
+    expect(ifBlock.activeBranchIndex).toBe(-1);
+    expect(ifBlock.branches[0].isActive).toBe(false);
+    expect(ifBlock.branches[0].rootNodes).toEqual([]);
+  });
+
+  it('should report the active branch for an @if / @else chain', () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            <p>Yes</p>
+          } @else {
+            <p>No</p>
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = false;
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.branches.length).toBe(2);
+    expect(ifBlock.activeBranchIndex).toBe(1);
+    expect(ifBlock.branches.map((b) => b.isActive)).toEqual([false, true]);
+  });
+
+  it('should track the active branch across @if / @else if / @else', async () => {
+    @Component({
+      template: `
+        <section>
+          @if (value() === 'a') {
+            <p>A</p>
+          } @else if (value() === 'b') {
+            <p>B</p>
+          } @else if (value() === 'c') {
+            <p>C</p>
+          } @else {
+            <p>other</p>
+          }
+        </section>
+      `,
+    })
+    class App {
+      value = signal<string>('b');
+    }
+
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+
+    let [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.branches.length).toBe(4);
+    expect(ifBlock.activeBranchIndex).toBe(1);
+
+    fixture.componentInstance.value.set('d');
+    await fixture.whenStable();
+
+    [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.activeBranchIndex).toBe(3);
+
+    fixture.componentInstance.value.set('a');
+    await fixture.whenStable();
+
+    [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.activeBranchIndex).toBe(0);
+  });
+
+  it('should expose root nodes for the active branch only', () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            <p>Yes</p>
+          } @else {
+            <p>No</p>
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = true;
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const [ifBlock] = getIfBlocks(fixture.nativeElement);
+    expect(ifBlock.branches[0].rootNodes.length).toBeGreaterThan(0);
+    expect(ifBlock.branches[1].rootNodes).toEqual([]);
+  });
+
+  it('should discover nested @if blocks', () => {
+    @Component({
+      template: `
+        <section>
+          @if (outer) {
+            <p>outer</p>
+            @if (inner) {
+              <p>inner</p>
+            }
+          }
+        </section>
+      `,
+    })
+    class App {
+      outer = true;
+      inner = true;
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const results = getIfBlocks(fixture.nativeElement);
+    expect(results.length).toBe(2);
+    expect(results.map((b) => b.activeBranchIndex)).toEqual([0, 0]);
+  });
+
+  it('should discover @if blocks nested inside a @for block', () => {
+    @Component({
+      template: `
+        <section>
+          @for (item of items; track $index) {
+            @if (item % 2 === 0) {
+              <p>even</p>
+            } @else {
+              <p>odd</p>
+            }
+          }
+        </section>
+      `,
+    })
+    class App {
+      items = [1, 2, 3];
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const results = getControlFlowBlocks(fixture.nativeElement);
+    const forBlocks = results.filter((b) => b.type === ControlFlowBlockType.For);
+    const ifBlocks = results.filter((b) => b.type === ControlFlowBlockType.If);
+    expect(forBlocks.length).toBe(1);
+    // One @if block per iteration of the @for loop.
+    expect(ifBlocks.length).toBe(3);
+    const activeBranches = (ifBlocks as IfBlockData[]).map((b) => b.activeBranchIndex);
+    // items: 1 (odd → branch 1), 2 (even → branch 0), 3 (odd → branch 1).
+    expect(activeBranches).toEqual([1, 0, 1]);
+  });
+
+  it('should not return @switch blocks (not yet supported)', () => {
+    @Component({
+      template: `
+        <section>
+          @switch (value) {
+            @case ('a') {
+              <p>A</p>
+            }
+            @case ('b') {
+              <p>B</p>
+            }
+            @default {
+              <p>other</p>
+            }
+          }
+        </section>
+      `,
+    })
+    class App {
+      value = 'a';
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const results = getControlFlowBlocks(fixture.nativeElement);
+    expect(results).toEqual([]);
+  });
+
+  it('should differentiate @if from a sibling @switch', () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            <p>shown</p>
+          }
+          @switch (value) {
+            @case ('a') {
+              <p>A</p>
+            }
+            @default {
+              <p>other</p>
+            }
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = true;
+      value = 'a';
+    }
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const results = getControlFlowBlocks(fixture.nativeElement);
+    expect(results.length).toBe(1);
+    expect(results[0].type).toBe(ControlFlowBlockType.If);
+  });
+
+  it('should differentiate @if from a nested @switch', async () => {
+    @Component({
+      template: `
+        <section>
+          @if (show) {
+            @switch (value) {
+              @case ('a') {
+                <p>A</p>
+              }
+              @default {
+                <p>other</p>
+              }
+            }
+          }
+        </section>
+      `,
+    })
+    class App {
+      show = true;
+      value = 'a';
+    }
+
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+
+    const results = getControlFlowBlocks(fixture.nativeElement);
+    expect(results.length).toBe(1);
+    expect(results[0].type).toBe(ControlFlowBlockType.If);
   });
 });

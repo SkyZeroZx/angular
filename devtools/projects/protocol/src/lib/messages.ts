@@ -84,6 +84,13 @@ export type HydrationStatus =
 export enum ControlFlowBlockType {
   Defer,
   For,
+  If,
+  /**
+   * Reserved for `@switch`. The runtime discovery for `@switch` is not yet
+   * implemented; this slot exists so the discriminated union mirrors the
+   * runtime enum and can be exhaustively switched over.
+   */
+  Switch,
 }
 
 export interface ControlFlowBlock {
@@ -116,6 +123,21 @@ export interface ForLoopBlock extends ControlFlowBlock {
   hasEmptyBlock: boolean;
   items: Descriptor[];
   trackExpression: string;
+}
+
+export interface IfBranch {
+  /** Index of the branch within the `@if` chain (0 = `@if`, n = `@else if` / `@else`). */
+  index: number;
+  /** Whether this branch is the one currently being rendered. */
+  isActive: boolean;
+}
+
+export interface IfBlock extends ControlFlowBlock {
+  type: ControlFlowBlockType.If;
+  /** Index of the active branch in `branches`, or `-1` when none is rendered. */
+  activeBranchIndex: number;
+  /** All branches of the `@if` chain in source order. */
+  branches: IfBranch[];
 }
 
 export type ChangeDetection = 'ng-on-push' | 'ng-eager' | 'acx-on-push' | 'acx-default';
@@ -316,7 +338,7 @@ export interface DirectiveProfile {
 export interface ElementProfile {
   directives: DirectiveProfile[];
   children: ElementProfile[];
-  type: 'element' | 'defer' | 'for';
+  type: 'element' | 'defer' | 'for' | 'if';
 }
 
 export interface ProfilerFrame {

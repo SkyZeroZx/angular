@@ -33,6 +33,12 @@ let hooks: Partial<Hooks> = {};
 const DIRECTIVE_CONTROL_FLOW: {[key in ControlFlowBlockType]: ElementProfile['type']} = {
   [ControlFlowBlockType.For]: 'for',
   [ControlFlowBlockType.Defer]: 'defer',
+  [ControlFlowBlockType.If]: 'if',
+  // `@switch` discovery is not yet implemented; the entry exists so this map
+  // remains exhaustive over `ControlFlowBlockType`. We map it to `'element'`
+  // as a harmless fallback in case a future runtime change starts emitting it
+  // before the devtools UI is wired up.
+  [ControlFlowBlockType.Switch]: 'element',
 };
 
 export const start = (onFrame: (frame: ProfilerFrame) => void): void => {

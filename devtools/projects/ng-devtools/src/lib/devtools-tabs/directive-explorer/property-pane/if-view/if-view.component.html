@@ -1,0 +1,26 @@
+<mat-toolbar class="section-heading">Active branch</mat-toolbar>
+<div class="details">
+  @if (ifBlock().activeBranchIndex === -1) {
+    <span class="pill">none</span>
+  } @else {
+    <span class="pill">
+      {{ branchLabel(ifBlock().branches[ifBlock().activeBranchIndex], ifBlock().branches.length) }}
+      (#{{ ifBlock().activeBranchIndex }})
+    </span>
+  }
+</div>
+
+<mat-toolbar class="section-heading">
+  Branches ({{ ifBlock().branches.length }})
+</mat-toolbar>
+<ul class="branches">
+  @for (branch of ifBlock().branches; track branch.index) {
+    <li class="branch" [class.active]="branch.isActive">
+      <span class="branch-index">#{{ branch.index }}</span>
+      <span class="branch-label">{{ branchLabel(branch, ifBlock().branches.length) }}</span>
+      @if (branch.isActive) {
+        <span class="active-dot" aria-label="active"></span>
+      }
+    </li>
+  }
+</ul>

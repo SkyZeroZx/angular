@@ -13,6 +13,14 @@ import {LiveCollection} from '../list_reconciliation';
 export enum ControlFlowBlockType {
   Defer,
   For,
+  If,
+  /**
+   * Reserved for `@switch`. The runtime discovery for `@switch` is not yet
+   * implemented; this slot exists so the discriminated union is forward-
+   * compatible and downstream consumers (e.g. devtools) can already exhaustively
+   * switch over `ControlFlowBlockType`.
+   */
+  Switch,
 }
 
 export interface ControlFlowBlockDataBase {
@@ -75,10 +83,43 @@ export interface ForLoopBlockData extends ControlFlowBlockDataBase {
   trackExpression: string;
 }
 
+/** Information about a single branch of an `@if` / `@else if` / `@else` chain. */
+export interface IfBranchData {
+  /**
+   * Index of the branch within the `@if` chain. The first (`@if`) branch is `0`,
+   * subsequent `@else if` / `@else` branches follow in source order.
+   */
+  index: number;
+
+  /** Whether this branch is the one currently being rendered. */
+  isActive: boolean;
+
+  /**
+   * Element root nodes currently rendered for this branch. Empty for branches
+   * that aren't active.
+   */
+  rootNodes: Node[];
+}
+
+/** Retrieved information about an `@if` block. */
+export interface IfBlockData extends ControlFlowBlockDataBase {
+  type: ControlFlowBlockType.If;
+
+  /**
+   * Index of the active branch within `branches`, or `-1` when no branch is
+   * being rendered (i.e. all conditions evaluated falsy and there is no
+   * trailing `@else`).
+   */
+  activeBranchIndex: number;
+
+  /** All branches of the `@if` chain in source order. */
+  branches: IfBranchData[];
+}
+
 /**
  * A control flow block information object.
  */
-export type ControlFlowBlock = DeferBlockData | ForLoopBlockData;
+export type ControlFlowBlock = DeferBlockData | ForLoopBlockData | IfBlockData;
 
 /**
  * A configuration object passed to a `ControlFlowBlockViewFinder` function.

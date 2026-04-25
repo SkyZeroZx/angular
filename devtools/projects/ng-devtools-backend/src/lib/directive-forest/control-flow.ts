@@ -16,6 +16,7 @@ import {
   ControlFlowBlockType,
   ForLoopBlock,
   DeferBlock,
+  IfBlock,
   RenderedDeferBlock,
 } from '../../../../protocol';
 import {ComponentTreeNode} from '../interfaces';
@@ -24,6 +25,10 @@ import {serializeValue} from '../state-serializer/state-serializer';
 const ELEMENT_NAME_MAP: {[key in ControlFlowBlockType]: string} = {
   [ControlFlowBlockType.Defer]: '@defer',
   [ControlFlowBlockType.For]: '@for',
+  [ControlFlowBlockType.If]: '@if',
+  // `@switch` discovery is not yet implemented at runtime; the entry exists so
+  // the strict-keyed lookup remains exhaustive.
+  [ControlFlowBlockType.Switch]: '@switch',
 };
 
 export function isControlFlowBlock(node: Node, iterator: ControlFlowBlocksIterator) {
@@ -64,6 +69,17 @@ export function mapToDevtoolsControlFlowModel(
           loadingBlock: block.loadingBlock,
         },
       } satisfies DeferBlock as DeferBlock;
+
+    case ControlFlowBlockTypeInternal.If:
+      return {
+        id: `ifId-${rootId}-${iteratorCurrentIdx}`,
+        type: ControlFlowBlockType.If,
+        activeBranchIndex: block.activeBranchIndex,
+        branches: block.branches.map((branch) => ({
+          index: branch.index,
+          isActive: branch.isActive,
+        })),
+      } satisfies IfBlock as IfBlock;
   }
 }
 

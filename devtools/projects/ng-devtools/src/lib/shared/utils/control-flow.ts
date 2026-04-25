@@ -11,6 +11,7 @@ import {
   ControlFlowBlockType,
   DeferBlock,
   ForLoopBlock,
+  IfBlock,
 } from '../../../../../protocol';
 
 export const BlockType = {
@@ -20,5 +21,9 @@ export const BlockType = {
 
   isForLoopBlock(node: ControlFlowBlock | null): node is ForLoopBlock {
     return !!node && node.type === ControlFlowBlockType.For;
+  },
+
+  isIfBlock(node: ControlFlowBlock | null): node is IfBlock {
+    return !!node && node.type === ControlFlowBlockType.If;
   },
 };

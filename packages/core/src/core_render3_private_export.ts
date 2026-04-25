@@ -284,6 +284,8 @@ export {
   ControlFlowBlockType as ɵControlFlowBlockType,
   DeferBlockData as ɵDeferBlockData,
   ForLoopBlockData as ɵForLoopBlockData,
+  IfBlockData as ɵIfBlockData,
+  IfBranchData as ɵIfBranchData,
 } from './render3/util/control_flow_types';
 export {
   FrameworkAgnosticGlobalUtils as ɵFrameworkAgnosticGlobalUtils,
