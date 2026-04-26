@@ -664,6 +664,17 @@ export enum ErrorCode {
   FORBIDDEN_REQUIRED_INITIALIZER_INVOCATION = 8118,
 
   /**
+   * Raised when `isPlatformBrowser` or `isPlatformServer` from `@angular/common` is used inside
+   * the condition of a control flow block (`@if`, `@else if`, `@switch`, `@case`, or `@for`).
+   *
+   * While this pattern hydrates correctly, it causes a brief flash of the server-rendered
+   * branch followed by a re-render of the client branch once hydration completes, leading
+   * to a poor user experience. Prefer using `afterNextRender` or branching outside of
+   * control flow when authoring different markup for server and client.
+   */
+  PLATFORM_CHECK_IN_CONTROL_FLOW = 8119,
+
+  /**
    * The template type-checking engine would need to generate an inline type check block for a
    * component, but the current type-checking environment doesn't support it.
    */

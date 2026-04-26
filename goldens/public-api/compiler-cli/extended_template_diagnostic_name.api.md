@@ -25,6 +25,8 @@ export enum ExtendedTemplateDiagnosticName {
     // (undocumented)
     OPTIONAL_CHAIN_NOT_NULLABLE = "optionalChainNotNullable",
     // (undocumented)
+    PLATFORM_CHECK_IN_CONTROL_FLOW = "platformCheckInControlFlow",
+    // (undocumented)
     SKIP_HYDRATION_NOT_STATIC = "skipHydrationNotStatic",
     // (undocumented)
     SUFFIX_NOT_SUPPORTED = "suffixNotSupported",
