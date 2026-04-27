@@ -21,6 +21,7 @@ import {
   equalParamsAndUrlSegments,
   RouterStateSnapshot,
 } from '../router_state';
+import {DEFAULT_PARAMS_EQUALITY_DEPTH} from '../router_config';
 import {equalPath} from '../url_tree';
 import {shallowEqual} from '../utils/collection';
 import {nodeChildrenAsMap, TreeNode} from '../utils/tree';
@@ -48,11 +49,18 @@ export function getAllRouteGuards(
   future: RouterStateSnapshot,
   curr: RouterStateSnapshot,
   parentContexts: ChildrenOutletContexts,
+  paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
 ): Checks {
   const futureRoot = future._root;
   const currRoot = curr ? curr._root : null;
 
-  return getChildRouteGuards(futureRoot, currRoot, parentContexts, [futureRoot.value]);
+  return getChildRouteGuards(
+    futureRoot,
+    currRoot,
+    parentContexts,
+    [futureRoot.value],
+    paramsEqualityDepth,
+  );
 }
 
 export function getCanActivateChild(
@@ -86,6 +94,7 @@ function getChildRouteGuards(
   currNode: TreeNode<ActivatedRouteSnapshot> | null,
   contexts: ChildrenOutletContexts | null,
   futurePath: ActivatedRouteSnapshot[],
+  paramsEqualityDepth: number,
   checks: Checks = {
     canDeactivateChecks: [],
     canActivateChecks: [],
@@ -95,7 +104,14 @@ function getChildRouteGuards(
 
   // Process the children of the future route
   futureNode.children.forEach((c) => {
-    getRouteGuards(c, prevChildren[c.value.outlet], contexts, futurePath.concat([c.value]), checks);
+    getRouteGuards(
+      c,
+      prevChildren[c.value.outlet],
+      contexts,
+      futurePath.concat([c.value]),
+      paramsEqualityDepth,
+      checks,
+    );
     delete prevChildren[c.value.outlet];
   });
 
@@ -112,6 +128,7 @@ function getRouteGuards(
   currNode: TreeNode<ActivatedRouteSnapshot>,
   parentContexts: ChildrenOutletContexts | null,
   futurePath: ActivatedRouteSnapshot[],
+  paramsEqualityDepth: number,
   checks: Checks = {
     canDeactivateChecks: [],
     canActivateChecks: [],
@@ -127,6 +144,7 @@ function getRouteGuards(
       curr,
       future,
       future.routeConfig!.runGuardsAndResolvers,
+      paramsEqualityDepth,
     );
     if (shouldRun) {
       checks.canActivateChecks.push(new CanActivate(futurePath));
@@ -143,12 +161,20 @@ function getRouteGuards(
         currNode,
         context ? context.children : null,
         futurePath,
+        paramsEqualityDepth,
         checks,
       );
 
       // if we have a componentless route, we recurse but keep the same outlet map.
     } else {
-      getChildRouteGuards(futureNode, currNode, parentContexts, futurePath, checks);
+      getChildRouteGuards(
+        futureNode,
+        currNode,
+        parentContexts,
+        futurePath,
+        paramsEqualityDepth,
+        checks,
+      );
     }
 
     if (shouldRun && context && context.outlet && context.outlet.isActivated) {
@@ -162,11 +188,25 @@ function getRouteGuards(
     checks.canActivateChecks.push(new CanActivate(futurePath));
     // If we have a component, we need to go through an outlet.
     if (future.component) {
-      getChildRouteGuards(futureNode, null, context ? context.children : null, futurePath, checks);
+      getChildRouteGuards(
+        futureNode,
+        null,
+        context ? context.children : null,
+        futurePath,
+        paramsEqualityDepth,
+        checks,
+      );
 
       // if we have a componentless route, we recurse but keep the same outlet map.
     } else {
-      getChildRouteGuards(futureNode, null, parentContexts, futurePath, checks);
+      getChildRouteGuards(
+        futureNode,
+        null,
+        parentContexts,
+        futurePath,
+        paramsEqualityDepth,
+        checks,
+      );
     }
   }
 
@@ -177,6 +217,7 @@ function shouldRunGuardsAndResolvers(
   curr: ActivatedRouteSnapshot,
   future: ActivatedRouteSnapshot,
   mode: RunGuardsAndResolvers | undefined,
+  paramsEqualityDepth: number,
 ): boolean {
   if (typeof mode === 'function') {
     return runInInjectionContext(future._environmentInjector, () => mode(curr, future));
@@ -187,7 +228,8 @@ function shouldRunGuardsAndResolvers(
 
     case 'pathParamsOrQueryParamsChange':
       return (
-        !equalPath(curr.url, future.url) || !shallowEqual(curr.queryParams, future.queryParams)
+        !equalPath(curr.url, future.url) ||
+        !shallowEqual(curr.queryParams, future.queryParams, paramsEqualityDepth)
       );
 
     case 'always':
@@ -195,13 +237,13 @@ function shouldRunGuardsAndResolvers(
 
     case 'paramsOrQueryParamsChange':
       return (
-        !equalParamsAndUrlSegments(curr, future) ||
-        !shallowEqual(curr.queryParams, future.queryParams)
+        !equalParamsAndUrlSegments(curr, future, paramsEqualityDepth) ||
+        !shallowEqual(curr.queryParams, future.queryParams, paramsEqualityDepth)
       );
 
     case 'paramsChange':
     default:
-      return !equalParamsAndUrlSegments(curr, future);
+      return !equalParamsAndUrlSegments(curr, future, paramsEqualityDepth);
   }
 }
 

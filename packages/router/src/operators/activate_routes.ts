@@ -9,6 +9,7 @@
 import {ActivationEnd, ChildActivationEnd, Event} from '../events';
 import type {DetachedRouteHandleInternal, RouteReuseStrategy} from '../route_reuse_strategy';
 import type {ChildrenOutletContexts} from '../router_outlet_context';
+import {DEFAULT_PARAMS_EQUALITY_DEPTH} from '../router_config';
 import {ActivatedRoute, advanceActivatedRoute, RouterState} from '../router_state';
 import {nodeChildrenAsMap, TreeNode} from '../utils/tree';
 
@@ -20,6 +21,7 @@ export class ActivateRoutes {
     private currState: RouterState,
     private forwardEvent: (evt: Event) => void,
     private inputBindingEnabled: boolean,
+    private paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
   ) {}
 
   activate(parentContexts: ChildrenOutletContexts): void {
@@ -27,7 +29,7 @@ export class ActivateRoutes {
     const currRoot = this.currState ? this.currState._root : null;
 
     this.deactivateChildRoutes(futureRoot, currRoot, parentContexts);
-    advanceActivatedRoute(this.futureState.root);
+    advanceActivatedRoute(this.futureState.root, this.paramsEqualityDepth);
     this.activateChildRoutes(futureRoot, currRoot, parentContexts);
   }
 
@@ -164,7 +166,7 @@ export class ActivateRoutes {
     const future = futureNode.value;
     const curr = currNode ? currNode.value : null;
 
-    advanceActivatedRoute(future);
+    advanceActivatedRoute(future, this.paramsEqualityDepth);
 
     // reusing the node
     if (future === curr) {
@@ -195,7 +197,7 @@ export class ActivateRoutes {
             context.outlet.attach(stored.componentRef, stored.route.value);
           }
 
-          advanceActivatedRoute(stored.route.value);
+          advanceActivatedRoute(stored.route.value, this.paramsEqualityDepth);
           this.activateChildRoutes(futureNode, null, context.children);
         } else {
           context.attachRef = null;

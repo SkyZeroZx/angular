@@ -52,7 +52,7 @@ import {ROUTE_INJECTOR_CLEANUP} from './route_injector_cleanup';
 
 import {RouteReuseStrategy} from './route_reuse_strategy';
 
-import {ROUTER_CONFIGURATION} from './router_config';
+import {getParamsEqualityDepth, ROUTER_CONFIGURATION} from './router_config';
 import {ROUTES} from './router_config_loader';
 import {Params} from './shared';
 import {StateManager} from './statemanager/state_manager';
@@ -99,6 +99,7 @@ export class Router {
   private readonly console = inject(Console);
   private readonly stateManager = inject(StateManager);
   private readonly options = inject(ROUTER_CONFIGURATION, {optional: true}) || {};
+  private readonly paramsEqualityDepth = getParamsEqualityDepth(this.options);
   private readonly pendingTasks = inject(PendingTasks);
   private readonly urlUpdateStrategy = this.options.urlUpdateStrategy || 'deferred';
   private readonly navigationTransitions = inject(NavigationTransitions);
@@ -637,11 +638,11 @@ export class Router {
       options = {...subsetMatchOptions, ...matchOptions};
     }
     if (isUrlTree(url)) {
-      return containsTree(this.currentUrlTree, url, options);
+      return containsTree(this.currentUrlTree, url, options, this.paramsEqualityDepth);
     }
 
     const urlTree = this.parseUrl(url);
-    return containsTree(this.currentUrlTree, urlTree, options);
+    return containsTree(this.currentUrlTree, urlTree, options, this.paramsEqualityDepth);
   }
 
   private removeEmptyProps(params: Params): Params {

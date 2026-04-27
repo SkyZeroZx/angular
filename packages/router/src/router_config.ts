@@ -99,6 +99,15 @@ export interface RouterConfigOptions {
   paramsInheritanceStrategy?: 'emptyOnly' | 'always';
 
   /**
+   * Configures how deeply the Router compares route parameters and query parameters when deciding
+   * whether they changed.
+   *
+   * The default value is `1`, which compares only immediate parameter values. Higher values compare
+   * nested plain objects and arrays up to the specified depth.
+   */
+  paramsEqualityDepth?: number;
+
+  /**
    * Defines when the router updates the browser URL. By default ('deferred'),
    * update after successful navigation.
    * Set to 'eager' if prefer to update the URL at the beginning of navigation.
@@ -300,3 +309,12 @@ export const ROUTER_CONFIGURATION = new InjectionToken<ExtraOptions>(
     factory: () => ({}),
   },
 );
+
+export const DEFAULT_PARAMS_EQUALITY_DEPTH = 1;
+
+export function getParamsEqualityDepth(options: RouterConfigOptions | null | undefined): number {
+  const depth = options?.paramsEqualityDepth ?? DEFAULT_PARAMS_EQUALITY_DEPTH;
+  return Number.isFinite(depth)
+    ? Math.max(DEFAULT_PARAMS_EQUALITY_DEPTH, Math.floor(depth))
+    : DEFAULT_PARAMS_EQUALITY_DEPTH;
+}

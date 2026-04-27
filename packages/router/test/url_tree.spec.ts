@@ -93,6 +93,16 @@ describe('UrlTree', () => {
         expect(containsTree(t1, t2, exactMatchOptions)).toBe(true);
       });
 
+      it('should use configured equality depth for query params', () => {
+        const t1 = serializer.parse('/one/two');
+        const t2 = serializer.parse('/one/two');
+        t1.queryParams = {filter: {label: 'angular'}};
+        t2.queryParams = {filter: {label: 'angular'}};
+
+        expect(containsTree(t1, t2, exactMatchOptions)).toBe(false);
+        expect(containsTree(t1, t2, exactMatchOptions, 2)).toBe(true);
+      });
+
       it('should return false when queryParams contains array params but are not the same', () => {
         const t1 = serializer.parse('/one/two?test=a&test=b&pages=5&pages=6');
         const t2 = serializer.parse('/one/two?test=a&test=b&pages=5&pages=7');
@@ -121,6 +131,16 @@ describe('UrlTree', () => {
         const t1 = serializer.parse('/one/two?test=4&test=4&test=1');
         const t2 = serializer.parse('/one/two?test=1&test=4&test=4');
         expect(containsTree(t1, t2, subsetMatchOptions)).toBe(true);
+      });
+
+      it('should use configured equality depth for query param subsets', () => {
+        const t1 = serializer.parse('/one/two');
+        const t2 = serializer.parse('/one/two');
+        t1.queryParams = {filter: {label: 'angular'}, page: '1'};
+        t2.queryParams = {filter: {label: 'angular'}};
+
+        expect(containsTree(t1, t2, subsetMatchOptions)).toBe(false);
+        expect(containsTree(t1, t2, subsetMatchOptions, 2)).toBe(true);
       });
 
       it('should return false when containee is missing queryParams', () => {

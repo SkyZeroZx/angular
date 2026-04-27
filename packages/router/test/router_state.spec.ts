@@ -175,6 +175,14 @@ describe('RouterState & Snapshot', () => {
       ).toEqual(true);
     });
 
+    it('should use configured equality depth for params', () => {
+      const firstSnapshot = createSnapshot({filter: {label: 'angular'}}, []);
+      const secondSnapshot = createSnapshot({filter: {label: 'angular'}}, []);
+
+      expect(equalParamsAndUrlSegments(firstSnapshot, secondSnapshot)).toEqual(false);
+      expect(equalParamsAndUrlSegments(firstSnapshot, secondSnapshot, 2)).toEqual(true);
+    });
+
     it('should return false when upstream params are different', () => {
       const [snapshot1, snapshot2] = createSnapshotPairWithParent(
         [{a: '1'}, {a: '1'}],
@@ -213,8 +221,11 @@ describe('RouterState & Snapshot', () => {
       route = createActivatedRoute('a');
     });
 
-    function createSnapshot(params: Params, url: UrlSegment[]): ActivatedRouteSnapshot {
-      const queryParams = {};
+    function createSnapshot(
+      params: Params,
+      url: UrlSegment[],
+      queryParams: Params = {},
+    ): ActivatedRouteSnapshot {
       const fragment = '';
       const data = {};
       const snapshot = new (ActivatedRouteSnapshot as any)(
@@ -247,6 +258,20 @@ describe('RouterState & Snapshot', () => {
       });
       advanceActivatedRoute(route);
       expect(hasSeenDataChange).toEqual(true);
+    });
+
+    it('should use configured equality depth for params and query params', () => {
+      const firstPlace = createSnapshot({filter: {label: 'angular'}}, [], {page: {index: '1'}});
+      const secondPlace = createSnapshot({filter: {label: 'angular'}}, [], {page: {index: '1'}});
+      route.snapshot = firstPlace;
+      (route as any)._futureSnapshot = secondPlace;
+      const paramsNext = spyOn((route as any).paramsSubject, 'next');
+      const queryParamsNext = spyOn((route as any).queryParamsSubject, 'next');
+
+      advanceActivatedRoute(route, 2);
+
+      expect(paramsNext).not.toHaveBeenCalled();
+      expect(queryParamsNext).not.toHaveBeenCalled();
     });
   });
 
@@ -301,8 +326,8 @@ function createActivatedRoute(cmp: string) {
   return new (ActivatedRoute as any)(
     new BehaviorSubject([new UrlSegment('', {})]),
     new BehaviorSubject({}),
-    null,
-    null,
+    new BehaviorSubject({}),
+    new BehaviorSubject(null),
     new BehaviorSubject({}),
     null,
     cmp,

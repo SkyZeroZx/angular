@@ -107,6 +107,14 @@ export class Customer {
 }
 ```
 
+### Configure parameter equality depth
+
+`paramsEqualityDepth` controls how many nested levels Angular Router compares when deciding whether route parameters or query parameters changed. The default value is `1`, which compares immediate values. Increase the depth when your app recreates structured parameter values that should be treated as unchanged when their nested contents match.
+
+```ts
+provideRouter(routes, withRouterConfig({paramsEqualityDepth: 2}));
+```
+
 ### Decide when the URL updates
 
 `urlUpdateStrategy` determines when Angular writes to the browser address bar. The default `'deferred'` waits for a successful navigation before changing the URL. Use `'eager'` to update immediately when navigation starts. Eager updates make it easier to surface the attempted URL if navigation fails due to guards or errors, but can briefly show an in-progress URL if you have long-running guards.

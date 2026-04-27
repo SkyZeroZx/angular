@@ -10,6 +10,7 @@ import {computed, Injectable, ɵRuntimeError as RuntimeError, Signal} from '@ang
 
 import {RuntimeErrorCode} from './errors';
 import type {Router} from './router';
+import {DEFAULT_PARAMS_EQUALITY_DEPTH} from './router_config';
 import {convertToParamMap, ParamMap, Params, PRIMARY_OUTLET} from './shared';
 import {equalArraysOrString, shallowEqual} from './utils/collection';
 
@@ -67,8 +68,13 @@ type PathCompareFn = (
   container: UrlSegmentGroup,
   containee: UrlSegmentGroup,
   matrixParams: ParamMatchOptions,
+  paramsEqualityDepth: number,
 ) => boolean;
-type ParamCompareFn = (container: Params, containee: Params) => boolean;
+type ParamCompareFn = (
+  container: Params,
+  containee: Params,
+  paramsEqualityDepth: number,
+) => boolean;
 
 const pathCompareMap: Record<IsActiveMatchOptions['paths'], PathCompareFn> = {
   'exact': equalSegmentGroups,
@@ -134,41 +140,67 @@ export function containsTree(
   container: UrlTree,
   containee: UrlTree,
   options: IsActiveMatchOptions,
+  paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
 ): boolean {
   return (
-    pathCompareMap[options.paths](container.root, containee.root, options.matrixParams) &&
-    paramCompareMap[options.queryParams](container.queryParams, containee.queryParams) &&
+    pathCompareMap[options.paths](
+      container.root,
+      containee.root,
+      options.matrixParams,
+      paramsEqualityDepth,
+    ) &&
+    paramCompareMap[options.queryParams](
+      container.queryParams,
+      containee.queryParams,
+      paramsEqualityDepth,
+    ) &&
     !(options.fragment === 'exact' && container.fragment !== containee.fragment)
   );
 }
 
-function equalParams(container: Params, containee: Params): boolean {
-  // TODO: This does not handle array params correctly.
-  return shallowEqual(container, containee);
+function equalParams(container: Params, containee: Params, paramsEqualityDepth: number): boolean {
+  return shallowEqual(container, containee, paramsEqualityDepth);
 }
 
 function equalSegmentGroups(
   container: UrlSegmentGroup,
   containee: UrlSegmentGroup,
   matrixParams: ParamMatchOptions,
+  paramsEqualityDepth: number,
 ): boolean {
   if (!equalPath(container.segments, containee.segments)) return false;
-  if (!matrixParamsMatch(container.segments, containee.segments, matrixParams)) {
+  if (
+    !matrixParamsMatch(container.segments, containee.segments, matrixParams, paramsEqualityDepth)
+  ) {
     return false;
   }
   if (container.numberOfChildren !== containee.numberOfChildren) return false;
   for (const c in containee.children) {
     if (!container.children[c]) return false;
-    if (!equalSegmentGroups(container.children[c], containee.children[c], matrixParams))
+    if (
+      !equalSegmentGroups(
+        container.children[c],
+        containee.children[c],
+        matrixParams,
+        paramsEqualityDepth,
+      )
+    ) {
       return false;
+    }
   }
   return true;
 }
 
-function containsParams(container: Params, containee: Params): boolean {
+function containsParams(
+  container: Params,
+  containee: Params,
+  paramsEqualityDepth: number,
+): boolean {
   return (
     Object.keys(containee).length <= Object.keys(container).length &&
-    Object.keys(containee).every((key) => equalArraysOrString(container[key], containee[key]))
+    Object.keys(containee).every((key) =>
+      equalArraysOrString(container[key], containee[key], paramsEqualityDepth),
+    )
   );
 }
 
@@ -176,8 +208,15 @@ function containsSegmentGroup(
   container: UrlSegmentGroup,
   containee: UrlSegmentGroup,
   matrixParams: ParamMatchOptions,
+  paramsEqualityDepth: number,
 ): boolean {
-  return containsSegmentGroupHelper(container, containee, containee.segments, matrixParams);
+  return containsSegmentGroupHelper(
+    container,
+    containee,
+    containee.segments,
+    matrixParams,
+    paramsEqualityDepth,
+  );
 }
 
 function containsSegmentGroupHelper(
@@ -185,19 +224,30 @@ function containsSegmentGroupHelper(
   containee: UrlSegmentGroup,
   containeePaths: UrlSegment[],
   matrixParams: ParamMatchOptions,
+  paramsEqualityDepth: number,
 ): boolean {
   if (container.segments.length > containeePaths.length) {
     const current = container.segments.slice(0, containeePaths.length);
     if (!equalPath(current, containeePaths)) return false;
     if (containee.hasChildren()) return false;
-    if (!matrixParamsMatch(current, containeePaths, matrixParams)) return false;
+    if (!matrixParamsMatch(current, containeePaths, matrixParams, paramsEqualityDepth))
+      return false;
     return true;
   } else if (container.segments.length === containeePaths.length) {
     if (!equalPath(container.segments, containeePaths)) return false;
-    if (!matrixParamsMatch(container.segments, containeePaths, matrixParams)) return false;
+    if (!matrixParamsMatch(container.segments, containeePaths, matrixParams, paramsEqualityDepth)) {
+      return false;
+    }
     for (const c in containee.children) {
       if (!container.children[c]) return false;
-      if (!containsSegmentGroup(container.children[c], containee.children[c], matrixParams)) {
+      if (
+        !containsSegmentGroup(
+          container.children[c],
+          containee.children[c],
+          matrixParams,
+          paramsEqualityDepth,
+        )
+      ) {
         return false;
       }
     }
@@ -206,13 +256,15 @@ function containsSegmentGroupHelper(
     const current = containeePaths.slice(0, container.segments.length);
     const next = containeePaths.slice(container.segments.length);
     if (!equalPath(container.segments, current)) return false;
-    if (!matrixParamsMatch(container.segments, current, matrixParams)) return false;
+    if (!matrixParamsMatch(container.segments, current, matrixParams, paramsEqualityDepth))
+      return false;
     if (!container.children[PRIMARY_OUTLET]) return false;
     return containsSegmentGroupHelper(
       container.children[PRIMARY_OUTLET],
       containee,
       next,
       matrixParams,
+      paramsEqualityDepth,
     );
   }
 }
@@ -221,9 +273,14 @@ function matrixParamsMatch(
   containerPaths: UrlSegment[],
   containeePaths: UrlSegment[],
   options: ParamMatchOptions,
+  paramsEqualityDepth: number,
 ) {
   return containeePaths.every((containeeSegment, i) => {
-    return paramCompareMap[options](containerPaths[i].parameters, containeeSegment.parameters);
+    return paramCompareMap[options](
+      containerPaths[i].parameters,
+      containeeSegment.parameters,
+      paramsEqualityDepth,
+    );
   });
 }
 
@@ -378,8 +435,15 @@ export class UrlSegment {
   }
 }
 
-export function equalSegments(as: UrlSegment[], bs: UrlSegment[]): boolean {
-  return equalPath(as, bs) && as.every((a, i) => shallowEqual(a.parameters, bs[i].parameters));
+export function equalSegments(
+  as: UrlSegment[],
+  bs: UrlSegment[],
+  paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
+): boolean {
+  return (
+    equalPath(as, bs) &&
+    as.every((a, i) => shallowEqual(a.parameters, bs[i].parameters, paramsEqualityDepth))
+  );
 }
 
 export function equalPath(as: UrlSegment[], bs: UrlSegment[]): boolean {

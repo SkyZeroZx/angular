@@ -11,6 +11,7 @@ import {BehaviorSubject, Observable, of} from 'rxjs';
 import {map} from 'rxjs/operators';
 
 import {Data, ResolveData, Route} from './models';
+import {DEFAULT_PARAMS_EQUALITY_DEPTH} from './router_config';
 import {convertToParamMap, ParamMap, Params, PRIMARY_OUTLET, RouteTitleKey} from './shared';
 import {equalSegments, UrlSegment} from './url_tree';
 import {shallowEqual, shallowEqualArrays} from './utils/collection';
@@ -118,9 +119,10 @@ export function createEmptyStateSnapshot(
  * The following example shows how to construct a component using information from a
  * currently activated route.
  *
- * Note: the observables in this class only emit when the current and previous values differ based
- * on shallow equality. For example, changing deeply nested properties in resolved `data` will not
- * cause the `ActivatedRoute.data` `Observable` to emit a new value.
+ * Note: by default, the observables in this class only emit when the current and previous values
+ * differ based on shallow equality. The Router's `paramsEqualityDepth` option can configure this
+ * depth for route parameters and query parameters. Changing deeply nested properties in resolved
+ * `data` will not cause the `ActivatedRoute.data` `Observable` to emit a new value.
  *
  * {@example router/activated-route/activated_route_component.ts region="activated-route"}
  *
@@ -494,21 +496,24 @@ function serializeNode(node: TreeNode<ActivatedRouteSnapshot>): string {
  * So we push new values into the observables only when they are not the initial values.
  * And we detect that by checking if the snapshot field is set.
  */
-export function advanceActivatedRoute(route: ActivatedRoute): void {
+export function advanceActivatedRoute(
+  route: ActivatedRoute,
+  paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
+): void {
   if (route.snapshot) {
     const currentSnapshot = route.snapshot;
     const nextSnapshot = route._futureSnapshot;
     route.snapshot = nextSnapshot;
-    if (!shallowEqual(currentSnapshot.queryParams, nextSnapshot.queryParams)) {
+    if (!shallowEqual(currentSnapshot.queryParams, nextSnapshot.queryParams, paramsEqualityDepth)) {
       route.queryParamsSubject.next(nextSnapshot.queryParams);
     }
     if (currentSnapshot.fragment !== nextSnapshot.fragment) {
       route.fragmentSubject.next(nextSnapshot.fragment);
     }
-    if (!shallowEqual(currentSnapshot.params, nextSnapshot.params)) {
+    if (!shallowEqual(currentSnapshot.params, nextSnapshot.params, paramsEqualityDepth)) {
       route.paramsSubject.next(nextSnapshot.params);
     }
-    if (!shallowEqualArrays(currentSnapshot.url, nextSnapshot.url)) {
+    if (!shallowEqualArrays(currentSnapshot.url, nextSnapshot.url, paramsEqualityDepth)) {
       route.urlSubject.next(nextSnapshot.url);
     }
     if (!shallowEqual(currentSnapshot.data, nextSnapshot.data)) {
@@ -525,14 +530,17 @@ export function advanceActivatedRoute(route: ActivatedRoute): void {
 export function equalParamsAndUrlSegments(
   a: ActivatedRouteSnapshot,
   b: ActivatedRouteSnapshot,
+  paramsEqualityDepth = DEFAULT_PARAMS_EQUALITY_DEPTH,
 ): boolean {
-  const equalUrlParams = shallowEqual(a.params, b.params) && equalSegments(a.url, b.url);
+  const equalUrlParams =
+    shallowEqual(a.params, b.params, paramsEqualityDepth) &&
+    equalSegments(a.url, b.url, paramsEqualityDepth);
   const parentsMismatch = !a.parent !== !b.parent;
 
   return (
     equalUrlParams &&
     !parentsMismatch &&
-    (!a.parent || equalParamsAndUrlSegments(a.parent, b.parent!))
+    (!a.parent || equalParamsAndUrlSegments(a.parent, b.parent!, paramsEqualityDepth))
   );
 }
 

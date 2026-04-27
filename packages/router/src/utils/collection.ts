@@ -10,10 +10,10 @@ import {ɵisPromise as isPromise} from '@angular/core';
 import {from, isObservable, Observable, of} from 'rxjs';
 import {firstValueFrom} from './first_value_from';
 
-export function shallowEqualArrays(a: readonly any[], b: readonly any[]): boolean {
+export function shallowEqualArrays(a: readonly any[], b: readonly any[], depth = 1): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; ++i) {
-    if (!shallowEqual(a[i], b[i])) return false;
+    if (!shallowEqual(a[i], b[i], depth)) return false;
   }
   return true;
 }
@@ -21,7 +21,12 @@ export function shallowEqualArrays(a: readonly any[], b: readonly any[]): boolea
 export function shallowEqual(
   a: {[key: string | symbol]: any},
   b: {[key: string | symbol]: any},
+  depth = 1,
 ): boolean {
+  if (depth <= 0) {
+    return a === b;
+  }
+
   // While `undefined` should never be possible, it would sometimes be the case in IE 11
   // and pre-chromium Edge. The check below accounts for this edge case.
   const k1 = a ? getDataKeys(a) : undefined;
@@ -32,7 +37,7 @@ export function shallowEqual(
   let key: string | symbol;
   for (let i = 0; i < k1.length; i++) {
     key = k1[i];
-    if (!equalArraysOrString(a[key], b[key])) {
+    if (!equalArraysOrString(a[key], b[key], depth)) {
       return false;
     }
   }
@@ -47,20 +52,59 @@ export function getDataKeys(obj: Object): Array<string | symbol> {
 }
 
 /**
- * Test equality for arrays of strings or a string.
+ * Test equality for parameter values, retaining existing array-of-strings comparison behavior.
  */
-export function equalArraysOrString(
-  a: string | readonly string[],
-  b: string | readonly string[],
-): boolean {
+export function equalArraysOrString(a: any, b: any, depth = 1): boolean {
+  if (a === b) {
+    return true;
+  }
+
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
+    if (depth > 1 && shouldCompareArrayElements(a, b)) {
+      return equalArrayElements(a, b, depth);
+    }
     const aSorted = [...a].sort();
     const bSorted = [...b].sort();
     return aSorted.every((val, index) => bSorted[index] === val);
-  } else {
-    return a === b;
   }
+
+  if (depth > 1 && isPlainObject(a) && isPlainObject(b)) {
+    return shallowEqual(a, b, depth - 1);
+  }
+
+  return a === b;
+}
+
+function equalArrayElements(a: readonly any[], b: readonly any[], depth: number): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let i = 0; i < a.length; i++) {
+    if (!equalArraysOrString(a[i], b[i], depth)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function shouldCompareArrayElements(a: readonly any[], b: readonly any[]): boolean {
+  return a.some(canCompareDeeply) || b.some(canCompareDeeply);
+}
+
+function canCompareDeeply(value: any): boolean {
+  return Array.isArray(value) || isPlainObject(value);
+}
+
+function isPlainObject(value: any): value is {[key: string | symbol]: any} {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 /**

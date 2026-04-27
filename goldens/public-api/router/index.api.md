@@ -753,6 +753,7 @@ export interface RouterConfigOptions {
     canceledNavigationResolution?: 'replace' | 'computed';
     defaultQueryParamsHandling?: QueryParamsHandling;
     onSameUrlNavigation?: OnSameUrlNavigation;
+    paramsEqualityDepth?: number;
     paramsInheritanceStrategy?: 'emptyOnly' | 'always';
     resolveNavigationPromiseOnError?: boolean;
     urlUpdateStrategy?: 'deferred' | 'eager';

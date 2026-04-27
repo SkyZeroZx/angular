@@ -347,6 +347,39 @@ describe('Router', () => {
         expect(events[0].snapshot.routeConfig.path).toBe('child');
       });
 
+      it('should use configured equality depth when deciding whether to rerun guards', () => {
+        const routeConfig: Routes[number] = {
+          path: 'child',
+          runGuardsAndResolvers: 'paramsChange',
+        };
+        const currentSnapshot = createActivatedRouteSnapshot({
+          component: 'child',
+          params: {filter: {label: 'angular'}},
+          routeConfig,
+        });
+        const futureSnapshot = createActivatedRouteSnapshot({
+          component: 'child',
+          params: {filter: {label: 'angular'}},
+          routeConfig,
+        });
+        const currentState = new (RouterStateSnapshot as any)(
+          'url',
+          new TreeNode(empty.root, [new TreeNode(currentSnapshot, [])]),
+        );
+        const futureState = new (RouterStateSnapshot as any)(
+          'url',
+          new TreeNode(empty.root, [new TreeNode(futureSnapshot, [])]),
+        );
+        const contexts = new ChildrenOutletContexts(TestBed.inject(EnvironmentInjector));
+
+        expect(
+          getAllRouteGuards(futureState, currentState, contexts).canActivateChecks.length,
+        ).toBe(1);
+        expect(
+          getAllRouteGuards(futureState, currentState, contexts, 2).canActivateChecks.length,
+        ).toBe(0);
+      });
+
       it('should skip multiple unchanged routes but fire for all changed routes', () => {
         /**
          *         R  -->  R

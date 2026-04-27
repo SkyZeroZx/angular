@@ -66,7 +66,7 @@ import {recognize} from './operators/recognize';
 import {resolveData} from './operators/resolve_data';
 import {switchTap} from './operators/switch_tap';
 import {TitleStrategy} from './page_title_strategy';
-import {ROUTER_CONFIGURATION} from './router_config';
+import {getParamsEqualityDepth, ROUTER_CONFIGURATION} from './router_config';
 import {RouterConfigLoader} from './router_config_loader';
 import {ChildrenOutletContexts} from './router_outlet_context';
 import {
@@ -365,6 +365,7 @@ export class NavigationTransitions {
   private readonly options = inject(ROUTER_CONFIGURATION, {optional: true}) || {};
   private readonly paramsInheritanceStrategy =
     this.options.paramsInheritanceStrategy || DEFAULT_PARAMS_INHERITANCE_STRATEGY;
+  private readonly paramsEqualityDepth = getParamsEqualityDepth(this.options);
   private readonly urlHandlingStrategy = inject(UrlHandlingStrategy);
   private readonly createViewTransition = inject(CREATE_VIEW_TRANSITION, {optional: true});
   private readonly navigationErrorHandler = inject(NAVIGATION_ERROR_HANDLER, {optional: true});
@@ -641,7 +642,12 @@ export class NavigationTransitions {
 
             this.currentTransition = overallTransitionState = {
               ...t,
-              guards: getAllRouteGuards(t.targetSnapshot!, t.currentSnapshot, this.rootContexts),
+              guards: getAllRouteGuards(
+                t.targetSnapshot!,
+                t.currentSnapshot,
+                this.rootContexts,
+                this.paramsEqualityDepth,
+              ),
             };
             return overallTransitionState;
           }),
@@ -786,6 +792,7 @@ export class NavigationTransitions {
               overallTransitionState.currentRouterState,
               (evt: Event) => this.events.next(evt),
               this.inputBindingEnabled,
+              this.paramsEqualityDepth,
             ).activate(this.rootContexts);
 
             if (!shouldContinueNavigation()) {
