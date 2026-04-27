@@ -11,6 +11,8 @@ export enum ExtendedTemplateDiagnosticName {
     // (undocumented)
     DEFER_TRIGGER_MISCONFIGURATION = "deferTriggerMisconfiguration",
     // (undocumented)
+    DEPRECATED_SYMBOL_IN_TEMPLATE = "deprecatedSymbolInTemplate",
+    // (undocumented)
     INTERPOLATED_SIGNAL_NOT_INVOKED = "interpolatedSignalNotInvoked",
     // (undocumented)
     INVALID_BANANA_IN_BOX = "invalidBananaInBox",

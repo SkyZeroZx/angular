@@ -664,6 +664,19 @@ export enum ErrorCode {
   FORBIDDEN_REQUIRED_INITIALIZER_INVOCATION = 8118,
 
   /**
+   * A template references a symbol that has been marked as `@deprecated` via JSDoc.
+   *
+   * Detected cases include:
+   *  - Bindings to inputs, outputs, or models declared as `@deprecated`.
+   *  - Usages of components, directives, or pipes whose class is `@deprecated`.
+   *  - Property or method access in template expressions where the member is `@deprecated`.
+   *
+   * For example, an `input()` declared with a `@deprecated` JSDoc tag that is used as a binding
+   * target in a template will trigger this diagnostic.
+   */
+  DEPRECATED_SYMBOL_IN_TEMPLATE = 8119,
+
+  /**
    * The template type-checking engine would need to generate an inline type check block for a
    * component, but the current type-checking environment doesn't support it.
    */
