@@ -137,6 +137,18 @@ export interface HttpResourceRequest {
 }
 
 /**
+ * Context passed to the `httpResource` response parser.
+ *
+ * @publicApi 22.0
+ */
+export interface HttpResourceParseContext {
+  /**
+   * Headers returned with the HTTP response.
+   */
+  readonly headers: HttpHeaders;
+}
+
+/**
  * Options for creating an `httpResource`.
  *
  * @publicApi 22.0
@@ -145,12 +157,12 @@ export interface HttpResourceOptions<TResult, TRaw> {
   /**
    * Transform the result of the HTTP request before it's delivered to the resource.
    *
-   * `parse` receives the value from the HTTP layer as its raw type (e.g. as `unknown` for JSON data).
-   * It can be used to validate or transform the type of the resource, and return a more specific
-   * type. This is also useful for validating backend responses using a runtime schema validation
-   * library such as Zod.
+   * `parse` receives the value from the HTTP layer as its raw type (e.g. as `unknown` for JSON
+   * data), along with a context object containing the response headers. It can be used to validate
+   * or transform the type of the resource, and return a more specific type. This is also useful for
+   * validating backend responses using a runtime schema validation library such as Zod.
    */
-  parse?: (value: TRaw) => TResult;
+  parse?: (value: TRaw, context: HttpResourceParseContext) => TResult;
 
   /**
    * Value that the resource will take when in Idle or Loading states.

@@ -277,6 +277,48 @@ describe('httpResource', () => {
     expect(res.value()).toEqual('[1,2,3]');
   });
 
+  it('should allow parsing feature flags from response headers', async () => {
+    const backend = TestBed.inject(HttpTestingController);
+    const parseFlags = (header: string | null): Record<string, boolean> => {
+      const flags: Record<string, boolean> = {};
+      for (const flag of header?.split(';') ?? []) {
+        const [name, enabled] = flag.trim().split(':');
+        flags[name] = enabled === 'true';
+      }
+      return flags;
+    };
+
+    const res = httpResource(() => ({url: '/api/config/feature', method: 'GET'}), {
+      injector: TestBed.inject(Injector),
+      parse: (data, {headers}) => ({
+        data,
+        useNewUi: headers.get('X-Feature-New-UI') === 'enabled',
+        otherFlags: parseFlags(headers.get('X-Feature-Flags')),
+      }),
+    });
+    TestBed.tick();
+    const req = backend.expectOne('/api/config/feature');
+    req.flush(
+      {rollout: 'alpha'},
+      {
+        headers: {
+          'X-Feature-New-UI': 'enabled',
+          'X-Feature-Flags': 'new-setting:true; show-experimental-dashboard:false',
+        },
+      },
+    );
+
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(res.value()).toEqual({
+      data: {rollout: 'alpha'},
+      useNewUi: true,
+      otherFlags: {
+        'new-setting': true,
+        'show-experimental-dashboard': false,
+      },
+    });
+  });
+
   it('should allow defining an equality function', async () => {
     const backend = TestBed.inject(HttpTestingController);
     const res = httpResource<number>(() => '/data', {
@@ -327,6 +369,38 @@ describe('httpResource', () => {
 
     await TestBed.inject(ApplicationRef).whenStable();
     expect(res.value()).toBe(buffer);
+  });
+
+  it('should allow parsing a blob response with response headers', async () => {
+    const backend = TestBed.inject(HttpTestingController);
+    const parseFileNameFromContentDisposition = (header: string | null): string => {
+      return /filename="([^"]+)"/.exec(header ?? '')?.[1] ?? 'download';
+    };
+    const res = httpResource.blob(() => '/api/report', {
+      injector: TestBed.inject(Injector),
+      parse: (blob, {headers}) =>
+        new File(
+          [blob],
+          decodeURIComponent(
+            parseFileNameFromContentDisposition(headers.get('content-disposition')),
+          ),
+        ),
+    });
+    TestBed.tick();
+    const req = backend.expectOne('/api/report');
+    const blob = new Blob(['id,name\n1,Angular']);
+    req.flush(blob, {
+      headers: {
+        'Content-Disposition': 'attachment; filename="feature%20report.csv"',
+      },
+    });
+
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(res.hasValue()).toBe(true);
+    const file = res.value()!;
+    expect(file).toEqual(jasmine.any(File));
+    expect(file.name).toBe('feature report.csv');
+    expect(file.size).toBe(blob.size);
   });
 
   it('should send request on reload', async () => {
@@ -412,6 +486,18 @@ describe('httpResource', () => {
       } else if (result.error()) {
       }
     });
+
+    it('should infer parse context headers', () => {
+      const result: HttpResourceRef<{body: string; tag: string | null} | undefined> =
+        httpResource.text(() => '/data', {
+          injector: TestBed.inject(Injector),
+          parse: (body, {headers}) => ({body, tag: headers.get('X-Tag')}),
+        });
+
+      if (result.hasValue()) {
+        const _value: {body: string; tag: string | null} = result.value();
+      }
+    });
   });
 
   describe('TransferCache integration', () => {
@@ -446,6 +532,43 @@ describe('httpResource', () => {
 
       // Also no new request should be made
       TestBed.inject(HttpTestingController).expectNone('/data');
+    });
+
+    it('should synchronously parse cached values with response headers from TransferState', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          withHttpTransferCache({includeHeaders: ['X-Feature-New-UI']}),
+        ],
+      });
+
+      globalThis['ngServerMode'] = true;
+      TestBed.inject(HttpClient).get('/api/config/feature').subscribe();
+      const req = TestBed.inject(HttpTestingController).expectOne('/api/config/feature');
+      req.flush(
+        {rollout: 'alpha'},
+        {
+          headers: {
+            'X-Feature-New-UI': 'enabled',
+          },
+        },
+      );
+
+      globalThis['ngServerMode'] = false;
+
+      const res = httpResource(() => '/api/config/feature', {
+        injector: TestBed.inject(Injector),
+        parse: (data, {headers}) => ({
+          data,
+          useNewUi: headers.get('X-Feature-New-UI') === 'enabled',
+        }),
+      });
+
+      expect(res.status()).toBe('resolved');
+      expect(res.value()).toEqual({data: {rollout: 'alpha'}, useNewUi: true});
+      TestBed.inject(HttpTestingController).expectNone('/api/config/feature');
     });
 
     it('should not evaluate the request payload during resource initialization', () => {

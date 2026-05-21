@@ -29,7 +29,12 @@ import {HttpClient} from './client';
 import {HttpHeaders} from './headers';
 import {HttpParams} from './params';
 import {HttpRequest} from './request';
-import {HttpResourceOptions, HttpResourceRef, HttpResourceRequest} from './resource_api';
+import {
+  HttpResourceOptions,
+  HttpResourceParseContext,
+  HttpResourceRef,
+  HttpResourceRequest,
+} from './resource_api';
 import {HttpErrorResponse, HttpEventType, HttpProgressEvent} from './response';
 import {
   CACHE_OPTIONS,
@@ -247,6 +252,9 @@ function makeHttpResourceFn<TRaw>(responseType: ResponseType) {
     const cacheOptions = injector.get(CACHE_OPTIONS, null, {optional: true});
     const transferState = injector.get(TransferState, null, {optional: true});
     const originMap = injector.get(HTTP_TRANSFER_CACHE_ORIGIN_MAP, null, {optional: true});
+    const parse = options?.parse as
+      | ((value: unknown, context: HttpResourceParseContext) => TResult)
+      | undefined;
 
     const getInitialStream = (req: HttpRequest<unknown> | undefined) => {
       if (cacheOptions && transferState && req) {
@@ -254,7 +262,9 @@ function makeHttpResourceFn<TRaw>(responseType: ResponseType) {
         if (cachedResponse) {
           try {
             const body = cachedResponse.body as TRaw;
-            const parsed = options?.parse ? options.parse(body) : (body as unknown as TResult);
+            const parsed = parse
+              ? parse(body, {headers: cachedResponse.headers})
+              : (body as unknown as TResult);
             return signal({value: parsed});
           } catch (e) {
             if (typeof ngDevMode === 'undefined' || ngDevMode) {
@@ -275,7 +285,7 @@ function makeHttpResourceFn<TRaw>(responseType: ResponseType) {
       (ctx: ResourceParamsContext) => normalizeRequest(ctx, request, responseType),
       options?.defaultValue,
       options?.debugName,
-      options?.parse as (value: unknown) => TResult,
+      parse,
       options?.equal as ValueEqualityFn<unknown>,
       getInitialStream,
     ) as HttpResourceRef<TResult>;
@@ -362,7 +372,7 @@ class HttpResourceImpl<T>
     request: (ctx: ResourceParamsContext) => HttpRequest<T> | undefined,
     defaultValue: T,
     debugName?: string,
-    parse?: (value: unknown) => T,
+    parse?: (value: unknown, context: HttpResourceParseContext) => T,
     equal?: ValueEqualityFn<unknown>,
     getInitialStream?: (
       request: HttpRequest<unknown> | undefined,
@@ -396,7 +406,9 @@ class HttpResourceImpl<T>
                 this._headers.set(event.headers);
                 this._statusCode.set(event.status);
                 try {
-                  send({value: parse ? parse(event.body) : (event.body as T)});
+                  send({
+                    value: parse ? parse(event.body, {headers: event.headers}) : (event.body as T),
+                  });
                 } catch (error) {
                   send({error: encapsulateResourceError(error)});
                 }

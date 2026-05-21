@@ -45,7 +45,12 @@ export {
 } from './src/provider';
 export {HttpRequest, HttpRequestOptions} from './src/request';
 export {httpResource, HttpResourceFn} from './src/resource';
-export {HttpResourceOptions, HttpResourceRef, HttpResourceRequest} from './src/resource_api';
+export {
+  HttpResourceOptions,
+  HttpResourceParseContext,
+  HttpResourceRef,
+  HttpResourceRequest,
+} from './src/resource_api';
 export {
   HttpDownloadProgressEvent,
   HttpErrorResponse,

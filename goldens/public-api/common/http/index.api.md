@@ -926,7 +926,12 @@ export interface HttpResourceOptions<TResult, TRaw> {
     defaultValue?: NoInfer<TResult>;
     equal?: ValueEqualityFn<NoInfer<TResult>>;
     injector?: Injector;
-    parse?: (value: TRaw) => TResult;
+    parse?: (value: TRaw, context: HttpResourceParseContext) => TResult;
+}
+
+// @public
+export interface HttpResourceParseContext {
+    readonly headers: HttpHeaders;
 }
 
 // @public
