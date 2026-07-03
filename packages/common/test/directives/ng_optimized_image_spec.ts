@@ -31,6 +31,7 @@ import {
   RECOMMENDED_SRCSET_DENSITY_CAP,
   resetImagePriorityCount,
 } from '../../src/directives/ng_optimized_image/ng_optimized_image';
+import {NgOptimizedSource} from '../../src/directives/ng_optimized_image/ng_optimized_source';
 import {PRECONNECT_CHECK_BLOCKLIST} from '../../src/directives/ng_optimized_image/preconnect_link_checker';
 import {escapeCssUrl} from '../../src/directives/ng_optimized_image/url';
 
@@ -220,6 +221,287 @@ describe('Image directive', () => {
 
       expect(preloadImages.size).toEqual(0);
       expect(preloadLinks.length).toEqual(0);
+    });
+  });
+
+  describe('source directive', () => {
+    it('should set `srcset` on a picture source using the image loader', async () => {
+      const imageLoader = (config: ImageLoaderConfig) => `${IMG_BASE_URL}/${config.src}`;
+      setupTestingModule({imageLoader});
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" type="image/avif">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      const fixture = createTestComponent(template);
+      await fixture.whenStable();
+
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const source = nativeElement.querySelector('source')!;
+      expect(source.getAttribute('srcset')).toBe(`${IMG_BASE_URL}/img.avif`);
+    });
+
+    it('should set picture source `srcset` using `ngSrcset` width descriptors', async () => {
+      const imageLoader = (config: ImageLoaderConfig) => {
+        const width = config.width ? `?w=${config.width}` : ``;
+        return `${IMG_BASE_URL}/${config.src}${width}`;
+      };
+      setupTestingModule({imageLoader});
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" ngSrcset="100w, 200w" sizes="100vw" type="image/avif">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      const fixture = createTestComponent(template);
+      await fixture.whenStable();
+
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const source = nativeElement.querySelector('source')!;
+      expect(source.getAttribute('srcset')).toBe(
+        `${IMG_BASE_URL}/img.avif?w=100 100w, ${IMG_BASE_URL}/img.avif?w=200 200w`,
+      );
+      expect(source.getAttribute('sizes')).toBe('100vw');
+    });
+
+    it('should set picture source `srcset` using `ngSrcset` density descriptors', async () => {
+      const imageLoader = (config: ImageLoaderConfig) => {
+        const width = config.width ? `?w=${config.width}` : ``;
+        return `${IMG_BASE_URL}/${config.src}${width}`;
+      };
+      setupTestingModule({imageLoader});
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" ngSrcset="1x, 2x" width="100" height="50">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      const fixture = createTestComponent(template);
+      await fixture.whenStable();
+
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const source = nativeElement.querySelector('source')!;
+      expect(source.getAttribute('srcset')).toBe(
+        `${IMG_BASE_URL}/img.avif?w=100 1x, ${IMG_BASE_URL}/img.avif?w=200 2x`,
+      );
+    });
+
+    it('should generate a responsive picture source `srcset` when sizes is present', async () => {
+      const imageLoader = (config: ImageLoaderConfig) => {
+        const width = config.width ? `?w=${config.width}` : ``;
+        return `${IMG_BASE_URL}/${config.src}${width}`;
+      };
+      setupTestingModule({imageLoader});
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" sizes="100vw" type="image/avif">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      const fixture = createTestComponent(template);
+      await fixture.whenStable();
+
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const source = nativeElement.querySelector('source')!;
+      expect(source.getAttribute('srcset')).toBe(
+        `${IMG_BASE_URL}/img.avif?w=640 640w, ${IMG_BASE_URL}/img.avif?w=750 750w, ${IMG_BASE_URL}/img.avif?w=828 828w, ${IMG_BASE_URL}/img.avif?w=1080 1080w, ${IMG_BASE_URL}/img.avif?w=1200 1200w, ${IMG_BASE_URL}/img.avif?w=1920 1920w, ${IMG_BASE_URL}/img.avif?w=2048 2048w, ${IMG_BASE_URL}/img.avif?w=3840 3840w`,
+      );
+    });
+
+    it('should use the image loader to update a picture source `srcset` if `ngSrc` updates', async () => {
+      @Component({
+        selector: 'test-cmp',
+        template: `
+          <picture>
+            <source [ngSrc]="ngSrc" sizes="100vw" />
+            <img ngSrc="img.jpg" width="100" height="50" />
+          </picture>
+        `,
+        standalone: false,
+        changeDetection: ChangeDetectionStrategy.Eager,
+      })
+      class TestComponent {
+        ngSrc = 'img.avif';
+      }
+
+      const imageLoader = (config: ImageLoaderConfig) => {
+        const width = config.width ? `?w=${config.width}` : ``;
+        return `${IMG_BASE_URL}/${config.src}${width}`;
+      };
+      setupTestingModule({imageLoader, component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      await fixture.whenStable();
+
+      const nativeElement = fixture.nativeElement as HTMLElement;
+      const source = nativeElement.querySelector('source')!;
+      expect(source.getAttribute('srcset')).toBe(
+        `${IMG_BASE_URL}/img.avif?w=640 640w, ${IMG_BASE_URL}/img.avif?w=750 750w, ${IMG_BASE_URL}/img.avif?w=828 828w, ${IMG_BASE_URL}/img.avif?w=1080 1080w, ${IMG_BASE_URL}/img.avif?w=1200 1200w, ${IMG_BASE_URL}/img.avif?w=1920 1920w, ${IMG_BASE_URL}/img.avif?w=2048 2048w, ${IMG_BASE_URL}/img.avif?w=3840 3840w`,
+      );
+
+      fixture.componentInstance.ngSrc = 'updated.avif';
+      fixture.changeDetectorRef.markForCheck();
+      await fixture.whenStable();
+
+      expect(source.getAttribute('srcset')).toBe(
+        `${IMG_BASE_URL}/updated.avif?w=640 640w, ${IMG_BASE_URL}/updated.avif?w=750 750w, ${IMG_BASE_URL}/updated.avif?w=828 828w, ${IMG_BASE_URL}/updated.avif?w=1080 1080w, ${IMG_BASE_URL}/updated.avif?w=1200 1200w, ${IMG_BASE_URL}/updated.avif?w=1920 1920w, ${IMG_BASE_URL}/updated.avif?w=2048 2048w, ${IMG_BASE_URL}/updated.avif?w=3840 3840w`,
+      );
+    });
+
+    it('should throw if a static source input changes after initialization', async () => {
+      @Component({
+        selector: 'test-cmp',
+        template: `
+          <picture>
+            <source ngSrc="img.avif" [ngSrcset]="ngSrcset" />
+            <img ngSrc="img.jpg" width="100" height="50" />
+          </picture>
+        `,
+        standalone: false,
+        changeDetection: ChangeDetectionStrategy.Eager,
+      })
+      class TestComponent {
+        ngSrcset = '100w';
+      }
+
+      setupTestingModule({component: TestComponent});
+      const fixture = TestBed.createComponent(TestComponent);
+      await fixture.whenStable();
+
+      fixture.componentInstance.ngSrcset = '200w';
+      fixture.changeDetectorRef.markForCheck();
+
+      await expectAsync(fixture.whenStable()).toBeRejectedWithError(
+        /NG02953: The NgOptimizedSource directive .* has detected that `ngSrcset` was updated after initialization/,
+      );
+    });
+
+    it('should throw if both `srcset` and `ngSrc` are present on a picture source', async () => {
+      setupTestingModule();
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" srcset="img.avif">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      await expectAsync(
+        (async () => {
+          const fixture = createTestComponent(template);
+          await fixture.whenStable();
+        })(),
+      ).toBeRejectedWithError(
+        'NG02951: The NgOptimizedSource directive (activated on a <source> ' +
+          'element with the `ngSrc="img.avif"`) has detected that both ' +
+          '`srcset` and `ngSrc` have been set. The NgOptimizedSource directive ' +
+          'sets `srcset` itself based on the value of `ngSrc`. To fix this, ' +
+          'please remove the `srcset` attribute.',
+      );
+    });
+
+    it('should throw if the source is not inside a picture element', async () => {
+      setupTestingModule();
+
+      const template = `
+        <video>
+          <source ngSrc="movie.mp4">
+        </video>
+      `;
+      await expectAsync(
+        (async () => {
+          const fixture = createTestComponent(template);
+          await fixture.whenStable();
+        })(),
+      ).toBeRejectedWithError(
+        'NG02952: The NgOptimizedSource directive (activated on a <source> ' +
+          'element with the `ngSrc="movie.mp4"`) has detected that it is not ' +
+          'inside a `<picture>` element. The NgOptimizedSource directive is ' +
+          'only supported on `<source>` elements inside native `<picture>` elements.',
+      );
+    });
+
+    it('should throw if density descriptors are used without source width', async () => {
+      setupTestingModule();
+
+      const template = `
+        <picture>
+          <source ngSrc="img.avif" ngSrcset="1x, 2x">
+          <img ngSrc="img.jpg" width="100" height="50">
+        </picture>
+      `;
+      await expectAsync(
+        (async () => {
+          const fixture = createTestComponent(template);
+          await fixture.whenStable();
+        })(),
+      ).toBeRejectedWithError(
+        'NG02954: The NgOptimizedSource directive (activated on a <source> ' +
+          'element with the `ngSrc="img.avif"`) has detected that `ngSrcset` ' +
+          'uses density descriptors but the required `width` attribute is missing. ' +
+          'The width is needed to request scaled image candidates from the configured ' +
+          'loader. To fix this, add a `width` attribute or use width descriptors ' +
+          'such as "400w, 800w".',
+      );
+    });
+
+    describe('server', () => {
+      beforeEach(() => {
+        globalThis['ngServerMode'] = true;
+      });
+
+      afterEach(() => {
+        globalThis['ngServerMode'] = undefined;
+      });
+
+      it('should create preload link metadata for priority picture sources', async () => {
+        if (!isBrowser) return;
+
+        const imageLoader = (config: ImageLoaderConfig) => {
+          const width = config.width ? `?width=${config.width}` : ``;
+          return `https://angular.dev/${config.src}${width}`;
+        };
+        setupTestingModule({
+          imageLoader,
+          extraProviders: [{provide: PLATFORM_ID, useValue: PLATFORM_SERVER_ID}],
+        });
+
+        const template = `
+          <picture>
+            <source
+              ngSrc="hero.avif"
+              ngSrcset="640w, 1280w"
+              sizes="100vw"
+              media="(min-width: 600px)"
+              type="image/avif"
+              priority>
+            <img src="hero.jpg" alt="">
+          </picture>
+        `;
+        const fixture = createTestComponent(template);
+        await fixture.whenStable();
+
+        const _document = TestBed.inject(DOCUMENT);
+        const preloadLink = _document.head.querySelector(
+          `link[href="https://angular.dev/hero.avif"]`,
+        );
+
+        expect(preloadLink).toBeTruthy();
+        expect(preloadLink!.getAttribute('rel')).toEqual('preload');
+        expect(preloadLink!.getAttribute('as')).toEqual('image');
+        expect(preloadLink!.getAttribute('imagesizes')).toEqual('100vw');
+        expect(preloadLink!.getAttribute('imagesrcset')).toEqual(
+          'https://angular.dev/hero.avif?width=640 640w, https://angular.dev/hero.avif?width=1280 1280w',
+        );
+        expect(preloadLink!.getAttribute('media')).toEqual('(min-width: 600px)');
+        expect(preloadLink!.getAttribute('type')).toEqual('image/avif');
+        expect(preloadLink!.getAttribute('fetchpriority')).toEqual('high');
+
+        preloadLink!.remove();
+      });
     });
   });
 
@@ -2691,7 +2973,7 @@ function setupTestingModule(config?: {
     declarations: [config?.component ?? TestComponent],
     // Note: the `NgOptimizedImage` directive is experimental and is not a part of the
     // `CommonModule` yet, so it's imported separately.
-    imports: [CommonModule, NgOptimizedImage],
+    imports: [CommonModule, NgOptimizedImage, NgOptimizedSource],
     providers,
   });
 }
@@ -2701,7 +2983,7 @@ function setupTestingModule(config?: {
 function setUpModuleNoLoader() {
   TestBed.configureTestingModule({
     declarations: [TestComponent],
-    imports: [CommonModule, NgOptimizedImage],
+    imports: [CommonModule, NgOptimizedImage, NgOptimizedSource],
     providers: [{provide: DOCUMENT, useValue: window.document}],
   });
 }

@@ -15,7 +15,6 @@ import {
   ElementRef,
   ɵformatRuntimeError as formatRuntimeError,
   ɵIMAGE_CONFIG as IMAGE_CONFIG,
-  ɵIMAGE_CONFIG_DEFAULTS as IMAGE_CONFIG_DEFAULTS,
   ɵImageConfig as ImageConfig,
   inject,
   Injector,
@@ -27,72 +26,46 @@ import {
   ɵperformanceMarkFeature as performanceMarkFeature,
   Renderer2,
   ɵRuntimeError as RuntimeError,
-  ɵSafeValue as SafeValue,
   SimpleChanges,
-  ɵunwrapSafeValue as unwrapSafeValue,
 } from '@angular/core';
 
 import {RuntimeErrorCode} from '../../errors';
 
 import {imgDirectiveDetails} from './error_helper';
-import {cloudinaryLoaderInfo} from './image_loaders/cloudinary_loader';
 import {
   IMAGE_LOADER,
   ImageLoader,
   ImageLoaderConfig,
   noopImageLoader,
 } from './image_loaders/image_loader';
-import {imageKitLoaderInfo} from './image_loaders/imagekit_loader';
-import {imgixLoaderInfo} from './image_loaders/imgix_loader';
-import {netlifyLoaderInfo} from './image_loaders/netlify_loader';
 import {LCPImageObserver} from './lcp_image_observer';
 import {PreconnectLinkChecker} from './preconnect_link_checker';
 import {PreloadLinkCreator} from './preload-link-creator';
+import {
+  assertGreaterThanZero,
+  assertNoComplexSizes,
+  assertNoLoaderParamsWithoutLoader,
+  assertNoNgSrcsetWithoutLoader,
+  assertNoPostInitInputChange,
+  assertNonEmptyInput,
+  assertNotBase64Image,
+  assertNotBlobUrl,
+  assertNotMissingBuiltInLoader,
+  assertValidNgSrcsetValue,
+  callImageLoader,
+  DENSITY_SRCSET_MULTIPLIERS,
+  FIXED_SRCSET_HEIGHT_LIMIT,
+  FIXED_SRCSET_WIDTH_LIMIT,
+  IMAGE_DIRECTIVE_CONTEXT,
+  processConfig,
+  RECOMMENDED_SRCSET_DENSITY_CAP,
+  unwrapSafeUrl,
+  VALID_WIDTH_DESCRIPTOR_SRCSET,
+  VIEWPORT_BREAKPOINT_CUTOFF,
+} from './shared';
 import {escapeCssUrl} from './url';
 
-/**
- * When a Base64-encoded image is passed as an input to the `NgOptimizedImage` directive,
- * an error is thrown. The image content (as a string) might be very long, thus making
- * it hard to read an error message if the entire string is included. This const defines
- * the number of characters that should be included into the error message. The rest
- * of the content is truncated.
- */
-const BASE64_IMG_MAX_LENGTH_IN_ERROR = 50;
-
-/**
- * RegExpr to determine whether a src in a srcset is using width descriptors.
- * Should match something like: "100w, 200w".
- */
-const VALID_WIDTH_DESCRIPTOR_SRCSET = /^((\s*\d+w\s*(,|$)){1,})$/;
-
-/**
- * RegExpr to determine whether a src in a srcset is using density descriptors.
- * Should match something like: "1x, 2x, 50x". Also supports decimals like "1.5x, 1.50x".
- */
-const VALID_DENSITY_DESCRIPTOR_SRCSET = /^((\s*\d+(\.\d+)?x\s*(,|$)){1,})$/;
-
-/**
- * Srcset values with a density descriptor higher than this value will actively
- * throw an error. Such densities are not permitted as they cause image sizes
- * to be unreasonably large and slow down LCP.
- */
-export const ABSOLUTE_SRCSET_DENSITY_CAP = 3;
-
-/**
- * Used only in error message text to communicate best practices, as we will
- * only throw based on the slightly more conservative ABSOLUTE_SRCSET_DENSITY_CAP.
- */
-export const RECOMMENDED_SRCSET_DENSITY_CAP = 2;
-
-/**
- * Used in generating automatic density-based srcsets
- */
-const DENSITY_SRCSET_MULTIPLIERS = [1, 2];
-
-/**
- * Used to determine which breakpoints to use on full-width images
- */
-const VIEWPORT_BREAKPOINT_CUTOFF = 640;
+export {ABSOLUTE_SRCSET_DENSITY_CAP, RECOMMENDED_SRCSET_DENSITY_CAP} from './shared';
 /**
  * Used to determine whether two aspect ratios are similar in value.
  */
@@ -104,13 +77,6 @@ const ASPECT_RATIO_TOLERANCE = 0.1;
  * into account a typical device pixel ratio). In pixels.
  */
 const OVERSIZED_IMAGE_TOLERANCE = 1000;
-
-/**
- * Used to limit automatic srcset generation of very large sources for
- * fixed-size images. In pixels.
- */
-const FIXED_SRCSET_WIDTH_LIMIT = 1920;
-const FIXED_SRCSET_HEIGHT_LIMIT = 1080;
 
 /**
  * Placeholder dimension (height or width) limit in pixels. Angular produces a warning
@@ -129,14 +95,6 @@ const PLACEHOLDER_DIMENSION_LIMIT = 1000;
  */
 export const DATA_URL_WARN_LIMIT = 4000;
 export const DATA_URL_ERROR_LIMIT = 10000;
-
-/** Info about built-in loaders we can test for. */
-export const BUILT_IN_LOADERS = [
-  imgixLoaderInfo,
-  imageKitLoaderInfo,
-  cloudinaryLoaderInfo,
-  netlifyLoaderInfo,
-];
 
 /**
  * Threshold for the PRIORITY_TRUE_COUNT
@@ -424,14 +382,14 @@ export class NgOptimizedImage implements OnInit, OnChanges {
 
     if (ngDevMode) {
       const ngZone = this.injector.get(NgZone);
-      assertNonEmptyInput(this, 'ngSrc', this.ngSrc);
+      assertNonEmptyInput(this.ngSrc, 'ngSrc', this.ngSrc, IMAGE_DIRECTIVE_CONTEXT);
       assertValidNgSrcset(this, this.ngSrcset);
       assertNoConflictingSrc(this);
       if (this.ngSrcset) {
         assertNoConflictingSrcset(this);
       }
-      assertNotBase64Image(this);
-      assertNotBlobUrl(this);
+      assertNotBase64Image(this.ngSrc, IMAGE_DIRECTIVE_CONTEXT);
+      assertNotBlobUrl(this.ngSrc, IMAGE_DIRECTIVE_CONTEXT);
       if (this.fill) {
         assertEmptyWidthAndHeight(this);
         // This leaves the Angular zone to avoid triggering unnecessary change detection cycles when
@@ -442,10 +400,10 @@ export class NgOptimizedImage implements OnInit, OnChanges {
       } else {
         assertNonEmptyWidthAndHeight(this);
         if (this.height !== undefined) {
-          assertGreaterThanZero(this, this.height, 'height');
+          assertGreaterThanZero(this.ngSrc, this.height, 'height', IMAGE_DIRECTIVE_CONTEXT);
         }
         if (this.width !== undefined) {
-          assertGreaterThanZero(this, this.width, 'width');
+          assertGreaterThanZero(this.ngSrc, this.width, 'width', IMAGE_DIRECTIVE_CONTEXT);
         }
         // Only check for distorted images when not in fill mode, where
         // images may be intentionally stretched, cropped or letterboxed.
@@ -456,12 +414,22 @@ export class NgOptimizedImage implements OnInit, OnChanges {
       assertValidLoadingInput(this);
       assertValidDecodingInput(this);
       if (!this.ngSrcset) {
-        assertNoComplexSizes(this);
+        assertNoComplexSizes(this.ngSrc, this.sizes, IMAGE_DIRECTIVE_CONTEXT);
       }
       assertValidPlaceholder(this, this.imageLoader);
       assertNotMissingBuiltInLoader(this.ngSrc, this.imageLoader);
-      assertNoNgSrcsetWithoutLoader(this, this.imageLoader);
-      assertNoLoaderParamsWithoutLoader(this, this.imageLoader);
+      assertNoNgSrcsetWithoutLoader(
+        this.ngSrc,
+        this.ngSrcset,
+        this.imageLoader,
+        IMAGE_DIRECTIVE_CONTEXT,
+      );
+      assertNoLoaderParamsWithoutLoader(
+        this.ngSrc,
+        this.loaderParams,
+        this.imageLoader,
+        IMAGE_DIRECTIVE_CONTEXT,
+      );
 
       ngZone.runOutsideAngular(() => {
         this.lcpObserver!.registerImage(this.getRewrittenSrc(), this.priority);
@@ -535,17 +503,22 @@ export class NgOptimizedImage implements OnInit, OnChanges {
   /** @docs-private */
   ngOnChanges(changes: SimpleChanges<NgOptimizedImage>) {
     if (ngDevMode) {
-      assertNoPostInitInputChange(this, changes, [
-        'ngSrcset',
-        'width',
-        'height',
-        'priority',
-        'fill',
-        'loading',
-        'sizes',
-        'loaderParams',
-        'disableOptimizedSrcset',
-      ]);
+      assertNoPostInitInputChange(
+        this.ngSrc,
+        changes,
+        [
+          'ngSrcset',
+          'width',
+          'height',
+          'priority',
+          'fill',
+          'loading',
+          'sizes',
+          'loaderParams',
+          'disableOptimizedSrcset',
+        ],
+        IMAGE_DIRECTIVE_CONTEXT,
+      );
     }
     if (changes['ngSrc'] && !changes['ngSrc'].isFirstChange()) {
       const oldSrc = this._renderedSrc;
@@ -572,30 +545,10 @@ export class NgOptimizedImage implements OnInit, OnChanges {
     }
   }
 
-  /**
-   * Calculates the aspect ratio of the image based on width and height.
-   * Returns null if the aspect ratio cannot be calculated (missing dimensions or height is 0).
-   */
-  private getAspectRatio(): number | null {
-    if (this.width && this.height && this.height !== 0) {
-      return this.width / this.height;
-    }
-    return null;
-  }
-
   private callImageLoader(
     configWithoutCustomParams: Omit<ImageLoaderConfig, 'loaderParams'>,
   ): string {
-    let augmentedConfig: ImageLoaderConfig = configWithoutCustomParams;
-    if (this.loaderParams) {
-      augmentedConfig.loaderParams = this.loaderParams;
-    }
-    // Calculate height if width is provided and aspect ratio is available
-    const ratio = this.getAspectRatio();
-    if (ratio !== null && augmentedConfig.width) {
-      augmentedConfig.height = Math.round(augmentedConfig.width / ratio);
-    }
-    return this.imageLoader(augmentedConfig);
+    return callImageLoader(this.imageLoader, this, configWithoutCustomParams);
   }
 
   private getLoadingBehavior(): string {
@@ -780,19 +733,6 @@ export class NgOptimizedImage implements OnInit, OnChanges {
   }
 }
 
-/***** Helpers *****/
-
-/**
- * Sorts provided config breakpoints and uses defaults.
- */
-function processConfig(config: ImageConfig): ImageConfig {
-  let sortedBreakpoints: {breakpoints?: number[]} = {};
-  if (config.breakpoints) {
-    sortedBreakpoints.breakpoints = config.breakpoints.sort((a, b) => a - b);
-  }
-  return Object.assign({}, IMAGE_CONFIG_DEFAULTS, config, sortedBreakpoints);
-}
-
 /***** Assert functions *****/
 
 /**
@@ -821,41 +761,6 @@ function assertNoConflictingSrcset(dir: NgOptimizedImage) {
         `Supplying both of these attributes breaks lazy loading. ` +
         `The NgOptimizedImage directive sets \`srcset\` itself based on the value of ` +
         `\`ngSrcset\`. To fix this, please remove the \`srcset\` attribute.`,
-    );
-  }
-}
-
-/**
- * Verifies that the `ngSrc` is not a Base64-encoded image.
- */
-function assertNotBase64Image(dir: NgOptimizedImage) {
-  let ngSrc = dir.ngSrc.trim();
-  if (ngSrc.startsWith('data:')) {
-    if (ngSrc.length > BASE64_IMG_MAX_LENGTH_IN_ERROR) {
-      ngSrc = ngSrc.substring(0, BASE64_IMG_MAX_LENGTH_IN_ERROR) + '...';
-    }
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc, false)} \`ngSrc\` is a Base64-encoded string ` +
-        `(${ngSrc}). NgOptimizedImage does not support Base64-encoded strings. ` +
-        `To fix this, disable the NgOptimizedImage directive for this element ` +
-        `by removing \`ngSrc\` and using a standard \`src\` attribute instead.`,
-    );
-  }
-}
-
-/**
- * Verifies that the 'sizes' only includes responsive values.
- */
-function assertNoComplexSizes(dir: NgOptimizedImage) {
-  let sizes = dir.sizes;
-  if (sizes?.match(/((\)|,)\s|^)\d+px/)) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc, false)} \`sizes\` was set to a string including ` +
-        `pixel values. For automatic \`srcset\` generation, \`sizes\` must only include responsive ` +
-        `values, such as \`sizes="50vw"\` or \`sizes="(min-width: 768px) 50vw, 100vw"\`. ` +
-        `To fix this, modify the \`sizes\` attribute, or provide your own \`ngSrcset\` value directly.`,
     );
   }
 }
@@ -935,140 +840,10 @@ function assertNoOversizedDataUrl(dir: NgOptimizedImage) {
 }
 
 /**
- * Verifies that the `ngSrc` is not a Blob URL.
- */
-function assertNotBlobUrl(dir: NgOptimizedImage) {
-  const ngSrc = dir.ngSrc.trim();
-  if (ngSrc.startsWith('blob:')) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc)} \`ngSrc\` was set to a blob URL (${ngSrc}). ` +
-        `Blob URLs are not supported by the NgOptimizedImage directive. ` +
-        `To fix this, disable the NgOptimizedImage directive for this element ` +
-        `by removing \`ngSrc\` and using a regular \`src\` attribute instead.`,
-    );
-  }
-}
-
-/**
- * Verifies that the input is set to a non-empty string.
- */
-function assertNonEmptyInput(dir: NgOptimizedImage, name: string, value: unknown) {
-  const isString = typeof value === 'string';
-  const isEmptyString = isString && value.trim() === '';
-  if (!isString || isEmptyString) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc)} \`${name}\` has an invalid value ` +
-        `(\`${value}\`). To fix this, change the value to a non-empty string.`,
-    );
-  }
-}
-
-/**
  * Verifies that the `ngSrcset` is in a valid format, e.g. "100w, 200w" or "1x, 2x".
  */
-export function assertValidNgSrcset(dir: NgOptimizedImage, value: unknown) {
-  if (value == null) return;
-  assertNonEmptyInput(dir, 'ngSrcset', value);
-  const stringVal = value as string;
-  const isValidWidthDescriptor = VALID_WIDTH_DESCRIPTOR_SRCSET.test(stringVal);
-  const isValidDensityDescriptor = VALID_DENSITY_DESCRIPTOR_SRCSET.test(stringVal);
-
-  if (isValidDensityDescriptor) {
-    assertUnderDensityCap(dir, stringVal);
-  }
-
-  const isValidSrcset = isValidWidthDescriptor || isValidDensityDescriptor;
-  if (!isValidSrcset) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc)} \`ngSrcset\` has an invalid value (\`${value}\`). ` +
-        `To fix this, supply \`ngSrcset\` using a comma-separated list of one or more width ` +
-        `descriptors (e.g. "100w, 200w") or density descriptors (e.g. "1x, 2x").`,
-    );
-  }
-}
-
-function assertUnderDensityCap(dir: NgOptimizedImage, value: string) {
-  const underDensityCap = value
-    .split(',')
-    .every((num) => num === '' || parseFloat(num) <= ABSOLUTE_SRCSET_DENSITY_CAP);
-  if (!underDensityCap) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc)} the \`ngSrcset\` contains an unsupported image density:` +
-        `\`${value}\`. NgOptimizedImage generally recommends a max image density of ` +
-        `${RECOMMENDED_SRCSET_DENSITY_CAP}x but supports image densities up to ` +
-        `${ABSOLUTE_SRCSET_DENSITY_CAP}x. The human eye cannot distinguish between image densities ` +
-        `greater than ${RECOMMENDED_SRCSET_DENSITY_CAP}x - which makes them unnecessary for ` +
-        `most use cases. Images that will be pinch-zoomed are typically the primary use case for ` +
-        `${ABSOLUTE_SRCSET_DENSITY_CAP}x images. Please remove the high density descriptor and try again.`,
-    );
-  }
-}
-
-/**
- * Creates a `RuntimeError` instance to represent a situation when an input is set after
- * the directive has initialized.
- */
-function postInitInputChangeError(dir: NgOptimizedImage, inputName: string): {} {
-  let reason!: string;
-  if (inputName === 'width' || inputName === 'height') {
-    reason =
-      `Changing \`${inputName}\` may result in different attribute value ` +
-      `applied to the underlying image element and cause layout shifts on a page.`;
-  } else {
-    reason =
-      `Changing the \`${inputName}\` would have no effect on the underlying ` +
-      `image element, because the resource loading has already occurred.`;
-  }
-  return new RuntimeError(
-    RuntimeErrorCode.UNEXPECTED_INPUT_CHANGE,
-    `${imgDirectiveDetails(dir.ngSrc)} \`${inputName}\` was updated after initialization. ` +
-      `The NgOptimizedImage directive will not react to this input change. ${reason} ` +
-      `To fix this, either switch \`${inputName}\` to a static value ` +
-      `or wrap the image element in an @if that is gated on the necessary value.`,
-  );
-}
-
-/**
- * Verify that none of the listed inputs has changed.
- */
-function assertNoPostInitInputChange(
-  dir: NgOptimizedImage,
-  changes: SimpleChanges,
-  inputs: string[],
-) {
-  inputs.forEach((input) => {
-    const isUpdated = changes.hasOwnProperty(input);
-    if (isUpdated && !changes[input].isFirstChange()) {
-      if (input === 'ngSrc') {
-        // When the `ngSrc` input changes, we detect that only in the
-        // `ngOnChanges` hook, thus the `ngSrc` is already set. We use
-        // `ngSrc` in the error message, so we use a previous value, but
-        // not the updated one in it.
-        dir = {ngSrc: changes[input].previousValue} as NgOptimizedImage;
-      }
-      throw postInitInputChangeError(dir, input);
-    }
-  });
-}
-
-/**
- * Verifies that a specified input is a number greater than 0.
- */
-function assertGreaterThanZero(dir: NgOptimizedImage, inputValue: unknown, inputName: string) {
-  const validNumber = typeof inputValue === 'number' && inputValue > 0;
-  const validString =
-    typeof inputValue === 'string' && /^\d+$/.test(inputValue.trim()) && parseInt(inputValue) > 0;
-  if (!validNumber && !validString) {
-    throw new RuntimeError(
-      RuntimeErrorCode.INVALID_INPUT,
-      `${imgDirectiveDetails(dir.ngSrc)} \`${inputName}\` has an invalid value. ` +
-        `To fix this, provide \`${inputName}\` as a number greater than 0.`,
-    );
-  }
+export function assertValidNgSrcset(dir: {ngSrc: string}, value: unknown) {
+  assertValidNgSrcsetValue(dir.ngSrc, value, IMAGE_DIRECTIVE_CONTEXT);
 }
 
 /**
@@ -1322,76 +1097,6 @@ function assertValidDecodingInput(dir: NgOptimizedImage) {
 }
 
 /**
- * Warns if NOT using a loader (falling back to the generic loader) and
- * the image appears to be hosted on one of the image CDNs for which
- * we do have a built-in image loader. Suggests switching to the
- * built-in loader.
- *
- * @param ngSrc Value of the ngSrc attribute
- * @param imageLoader ImageLoader provided
- */
-function assertNotMissingBuiltInLoader(ngSrc: string, imageLoader: ImageLoader) {
-  if (imageLoader === noopImageLoader) {
-    let builtInLoaderName = '';
-    for (const loader of BUILT_IN_LOADERS) {
-      if (loader.testUrl(ngSrc)) {
-        builtInLoaderName = loader.name;
-        break;
-      }
-    }
-    if (builtInLoaderName) {
-      console.warn(
-        formatRuntimeError(
-          RuntimeErrorCode.MISSING_BUILTIN_LOADER,
-          `NgOptimizedImage: It looks like your images may be hosted on the ` +
-            `${builtInLoaderName} CDN, but your app is not using Angular's ` +
-            `built-in loader for that CDN. We recommend switching to use ` +
-            `the built-in by calling \`provide${builtInLoaderName}Loader()\` ` +
-            `in your \`providers\` and passing it your instance's base URL. ` +
-            `If you don't want to use the built-in loader, define a custom ` +
-            `loader function using IMAGE_LOADER to silence this warning.`,
-        ),
-      );
-    }
-  }
-}
-
-/**
- * Warns if ngSrcset is present and no loader is configured (i.e. the default one is being used).
- */
-function assertNoNgSrcsetWithoutLoader(dir: NgOptimizedImage, imageLoader: ImageLoader) {
-  if (dir.ngSrcset && imageLoader === noopImageLoader) {
-    console.warn(
-      formatRuntimeError(
-        RuntimeErrorCode.MISSING_NECESSARY_LOADER,
-        `${imgDirectiveDetails(dir.ngSrc)} the \`ngSrcset\` attribute is present but ` +
-          `no image loader is configured (i.e. the default one is being used), ` +
-          `which would result in the same image being used for all configured sizes. ` +
-          `To fix this, provide a loader or remove the \`ngSrcset\` attribute from the image.`,
-      ),
-    );
-  }
-}
-
-/**
- * Warns if loaderParams is present and no loader is configured (i.e. the default one is being
- * used).
- */
-function assertNoLoaderParamsWithoutLoader(dir: NgOptimizedImage, imageLoader: ImageLoader) {
-  if (dir.loaderParams && imageLoader === noopImageLoader) {
-    console.warn(
-      formatRuntimeError(
-        RuntimeErrorCode.MISSING_NECESSARY_LOADER,
-        `${imgDirectiveDetails(dir.ngSrc)} the \`loaderParams\` attribute is present but ` +
-          `no image loader is configured (i.e. the default one is being used), ` +
-          `which means that the loaderParams data will not be consumed and will not affect the URL. ` +
-          `To fix this, provide a custom loader or remove the \`loaderParams\` attribute from the image.`,
-      ),
-    );
-  }
-}
-
-/**
  * Warns if the priority attribute is used too often on page load
  */
 async function assetPriorityCountBelowThreshold(appRef: ApplicationRef) {
@@ -1453,15 +1158,6 @@ function callOnLoadIfImageIsLoaded(img: HTMLImageElement, callback: VoidFunction
 
 function round(input: number): number | string {
   return Number.isInteger(input) ? input : input.toFixed(2);
-}
-
-// Transform function to handle SafeValue input for ngSrc. This doesn't do any sanitization,
-// as that is not needed for img.src and img.srcset. This transform is purely for compatibility.
-function unwrapSafeUrl(value: string | SafeValue): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  return unwrapSafeValue(value);
 }
 
 // Transform function to handle inputs which may be booleans, strings, or string representations

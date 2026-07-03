@@ -46,9 +46,18 @@ export class PreloadLinkCreator {
    * @param renderer The `Renderer2` passed in from the directive
    * @param src The original src of the image that is set on the `ngSrc` input.
    * @param srcset The parsed and formatted srcset created from the `ngSrcset` input
-   * @param sizes The value of the `sizes` attribute passed in to the `<img>` tag
+   * @param sizes The value of the `sizes` attribute passed in to the `<img>` or `<source>` tag
+   * @param media The value of the `media` attribute passed in to the `<source>` tag
+   * @param type The value of the `type` attribute passed in to the `<source>` tag
    */
-  createPreloadLinkTag(renderer: Renderer2, src: string, srcset?: string, sizes?: string): void {
+  createPreloadLinkTag(
+    renderer: Renderer2,
+    src: string,
+    srcset?: string,
+    sizes?: string,
+    media?: string,
+    type?: string,
+  ): void {
     if (
       ngDevMode &&
       !this.errorShown &&
@@ -84,6 +93,14 @@ export class PreloadLinkCreator {
 
     if (srcset) {
       renderer.setAttribute(preload, 'imageSrcset', srcset);
+    }
+
+    if (media) {
+      renderer.setAttribute(preload, 'media', media);
+    }
+
+    if (type) {
+      renderer.setAttribute(preload, 'type', type);
     }
 
     renderer.appendChild(this.document.head, preload);

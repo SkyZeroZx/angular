@@ -31,6 +31,7 @@ import {
   OversizedImageComponentFailing,
   OversizedImageComponentPassing,
 } from './e2e/oversized-image/oversized-image';
+import {PictureComponent} from './e2e/picture/picture';
 import {PreconnectCheckComponent} from './e2e/preconnect-check/preconnect-check';
 import {PlaygroundComponent} from './playground';
 
@@ -58,6 +59,7 @@ const ROUTES = [
   {path: 'e2e/image-distortion-failing', component: ImageDistortionFailingComponent},
   {path: 'e2e/oversized-image-passing', component: OversizedImageComponentPassing},
   {path: 'e2e/oversized-image-failing', component: OversizedImageComponentFailing},
+  {path: 'e2e/picture', component: PictureComponent},
   {path: 'e2e/fill-mode-passing', component: FillModePassingComponent},
   {path: 'e2e/fill-mode-failing', component: FillModeFailingComponent},
 ];

@@ -15,4 +15,5 @@ export {provideImageKitLoader} from './image_loaders/imagekit_loader';
 export {provideImgixLoader} from './image_loaders/imgix_loader';
 export {provideNetlifyLoader} from './image_loaders/netlify_loader';
 export {ImagePlaceholderConfig, NgOptimizedImage} from './ng_optimized_image';
+export {NgOptimizedSource} from './ng_optimized_source';
 export {PRECONNECT_CHECK_BLOCKLIST} from './preconnect_link_checker';

@@ -42,6 +42,7 @@ import { ɵNavigationReloadOptions } from '@angular/core';
 import { ɵNavigationResult } from '@angular/core';
 import { ɵNavigationTransition } from '@angular/core';
 import { ɵNavigationUpdateCurrentEntryOptions } from '@angular/core';
+import { ɵSafeValue } from '@angular/core';
 
 // @public
 export const APP_BASE_HREF: InjectionToken<string>;
@@ -653,6 +654,27 @@ export class NgOptimizedImage implements OnInit, OnChanges {
     static ɵdir: i0.ɵɵDirectiveDeclaration<NgOptimizedImage, "img[ngSrc]", never, { "ngSrc": { "alias": "ngSrc"; "required": true; }; "ngSrcset": { "alias": "ngSrcset"; "required": false; }; "sizes": { "alias": "sizes"; "required": false; }; "width": { "alias": "width"; "required": false; }; "height": { "alias": "height"; "required": false; }; "decoding": { "alias": "decoding"; "required": false; }; "loading": { "alias": "loading"; "required": false; }; "priority": { "alias": "priority"; "required": false; }; "loaderParams": { "alias": "loaderParams"; "required": false; }; "disableOptimizedSrcset": { "alias": "disableOptimizedSrcset"; "required": false; }; "fill": { "alias": "fill"; "required": false; }; "placeholder": { "alias": "placeholder"; "required": false; }; "placeholderConfig": { "alias": "placeholderConfig"; "required": false; }; "src": { "alias": "src"; "required": false; }; "srcset": { "alias": "srcset"; "required": false; }; }, {}, never, never, true, never>;
     // (undocumented)
     static ɵfac: i0.ɵɵFactoryDeclaration<NgOptimizedImage, never>;
+}
+
+// @public
+export class NgOptimizedSource implements OnInit {
+    readonly disableOptimizedSrcset: i0.InputSignalWithTransform<boolean, unknown>;
+    readonly height: i0.InputSignalWithTransform<number | undefined, unknown>;
+    readonly loaderParams: i0.InputSignal<{
+        [key: string]: any;
+    } | undefined>;
+    readonly media: i0.InputSignal<string | undefined>;
+    ngOnInit(): void;
+    readonly ngSrc: i0.InputSignalWithTransform<string, string | ɵSafeValue>;
+    readonly ngSrcset: i0.InputSignal<string | undefined>;
+    readonly priority: i0.InputSignalWithTransform<boolean, unknown>;
+    readonly sizes: i0.InputSignal<string | undefined>;
+    readonly type: i0.InputSignal<string | undefined>;
+    readonly width: i0.InputSignalWithTransform<number | undefined, unknown>;
+    // (undocumented)
+    static ɵdir: i0.ɵɵDirectiveDeclaration<NgOptimizedSource, "source[ngSrc]", never, { "ngSrc": { "alias": "ngSrc"; "required": true; "isSignal": true; }; "ngSrcset": { "alias": "ngSrcset"; "required": false; "isSignal": true; }; "sizes": { "alias": "sizes"; "required": false; "isSignal": true; }; "width": { "alias": "width"; "required": false; "isSignal": true; }; "height": { "alias": "height"; "required": false; "isSignal": true; }; "priority": { "alias": "priority"; "required": false; "isSignal": true; }; "loaderParams": { "alias": "loaderParams"; "required": false; "isSignal": true; }; "disableOptimizedSrcset": { "alias": "disableOptimizedSrcset"; "required": false; "isSignal": true; }; "srcset": { "alias": "srcset"; "required": false; "isSignal": true; }; "media": { "alias": "media"; "required": false; "isSignal": true; }; "type": { "alias": "type"; "required": false; "isSignal": true; }; }, {}, never, never, true, never>;
+    // (undocumented)
+    static ɵfac: i0.ɵɵFactoryDeclaration<NgOptimizedSource, never>;
 }
 
 // @public

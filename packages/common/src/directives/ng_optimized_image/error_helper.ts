@@ -13,3 +13,11 @@ export function imgDirectiveDetails(ngSrc: string, includeNgSrc = true) {
     : '';
   return `The NgOptimizedImage directive ${ngSrcInfo}has detected that`;
 }
+
+// Assembles source directive details string, useful for error messages.
+export function sourceDirectiveDetails(ngSrc: string, includeNgSrc = true) {
+  const ngSrcInfo = includeNgSrc
+    ? `(activated on a <source> element with the \`ngSrc="${ngSrc}"\`) `
+    : '';
+  return `The NgOptimizedSource directive ${ngSrcInfo}has detected that`;
+}
