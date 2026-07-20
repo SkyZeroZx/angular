@@ -9,6 +9,8 @@
 import {
   assertInInjectionContext,
   computed,
+  effect,
+  type EffectRef,
   ɵencapsulateResourceError as encapsulateResourceError,
   inject,
   Injector,
@@ -20,6 +22,7 @@ import {
   signal,
   TransferState,
   type ValueEqualityFn,
+  untracked,
   ɵRuntimeError,
   ɵRuntimeErrorCode,
 } from '@angular/core';
@@ -31,11 +34,7 @@ import {HttpParams} from './params';
 import {HttpRequest} from './request';
 import {HttpResourceOptions, HttpResourceRef, HttpResourceRequest} from './resource_api';
 import {HttpErrorResponse, HttpEventType, HttpProgressEvent} from './response';
-import {
-  CACHE_OPTIONS,
-  HTTP_TRANSFER_CACHE_ORIGIN_MAP,
-  retrieveStateFromCache,
-} from './transfer_cache';
+import {CACHE_OPTIONS} from './transfer_cache';
 
 /**
  * Type for the `httpRequest` top-level function, which includes the call signatures for the JSON-
@@ -246,29 +245,9 @@ function makeHttpResourceFn<TRaw>(responseType: ResponseType) {
 
     const cacheOptions = injector.get(CACHE_OPTIONS, null, {optional: true});
     const transferState = injector.get(TransferState, null, {optional: true});
-    const originMap = injector.get(HTTP_TRANSFER_CACHE_ORIGIN_MAP, null, {optional: true});
-
-    const getInitialStream = (req: HttpRequest<unknown> | undefined) => {
-      if (cacheOptions && transferState && req) {
-        const cachedResponse = retrieveStateFromCache(req, cacheOptions, transferState, originMap);
-        if (cachedResponse) {
-          try {
-            const body = cachedResponse.body as TRaw;
-            const parsed = options?.parse ? options.parse(body) : (body as unknown as TResult);
-            return signal({value: parsed});
-          } catch (e) {
-            if (typeof ngDevMode === 'undefined' || ngDevMode) {
-              console.warn(
-                `Angular detected an error while parsing the cached response for the httpResource at \`${req.url}\`. ` +
-                  `The resource will fall back to its default value and try again asynchronously.`,
-                e,
-              );
-            }
-          }
-        }
-      }
-      return undefined;
-    };
+    // The exact cache lookup must remain inside HttpClient so request interceptors run first.
+    const mayHaveInitialResponse = () =>
+      cacheOptions?.isCacheActive === true && transferState !== null && !transferState.isEmpty;
 
     return new HttpResourceImpl(
       injector,
@@ -277,7 +256,7 @@ function makeHttpResourceFn<TRaw>(responseType: ResponseType) {
       options?.debugName,
       options?.parse as (value: unknown) => TResult,
       options?.equal as ValueEqualityFn<unknown>,
-      getInitialStream,
+      mayHaveInitialResponse,
     ) as HttpResourceRef<TResult>;
   };
 }
@@ -338,6 +317,13 @@ class HttpResourceImpl<T>
   implements HttpResourceRef<T>
 {
   private client!: HttpClient;
+  private initialLoad:
+    | {
+        request: HttpRequest<unknown>;
+        result: HttpResourceLoad<T>;
+      }
+    | undefined;
+  private initialLoadWatcher: EffectRef | undefined;
   private _headers = linkedSignal({
     source: this.extRequest,
     computation: () => undefined as HttpHeaders | undefined,
@@ -358,99 +344,237 @@ class HttpResourceImpl<T>
   readonly statusCode = this._statusCode.asReadonly();
 
   constructor(
-    injector: Injector,
+    private readonly injector: Injector,
     request: (ctx: ResourceParamsContext) => HttpRequest<T> | undefined,
     defaultValue: T,
     debugName?: string,
     parse?: (value: unknown) => T,
     equal?: ValueEqualityFn<unknown>,
-    getInitialStream?: (
-      request: HttpRequest<unknown> | undefined,
-    ) => Signal<ResourceStreamItem<T>> | undefined,
+    mayHaveInitialResponse?: () => boolean,
   ) {
     super(
       request,
       ({params: request, abortSignal}) => {
-        let sub: Subscription | undefined;
-        // In the unlikely case the request returns synchronously we want to make sure the observable
-        // is subscribe even if it isn't initialized yet.
-        let aborted = false;
+        const initialLoad = this.clearInitialLoad();
 
-        // Track the abort listener so it can be removed if the Observable completes (as a memory
-        // optimization).
-        const onAbort = () => {
-          aborted = true;
-          sub?.unsubscribe();
-        };
-        abortSignal.addEventListener('abort', onAbort);
-
-        // Start off stream as undefined.
-        const stream = signal<ResourceStreamItem<T>>({value: undefined as T});
-        let resolve: ((value: Signal<ResourceStreamItem<T>>) => void) | undefined;
-        const promise = new Promise<Signal<ResourceStreamItem<T>>>((r) => (resolve = r));
-
-        const send = (value: ResourceStreamItem<T>): void => {
-          stream.set(value);
-          resolve?.(stream);
-          resolve = undefined;
-        };
-
-        sub = this.client.request(request!).subscribe({
-          next: (event) => {
-            switch (event.type) {
-              case HttpEventType.Response:
-                this._headers.set(event.headers);
-                this._statusCode.set(event.status);
-                try {
-                  send({value: parse ? parse(event.body) : (event.body as T)});
-                } catch (error) {
-                  send({error: encapsulateResourceError(error)});
-                }
-                break;
-              case HttpEventType.DownloadProgress:
-                this._progress.set(event);
-                break;
-            }
-          },
-          error: (error) => {
-            if (error instanceof HttpErrorResponse) {
-              this._headers.set(error.headers);
-              this._statusCode.set(error.status);
-            }
-
-            send({error});
-            abortSignal.removeEventListener('abort', onAbort);
-          },
-          complete: () => {
-            if (resolve) {
-              send({
-                error: new ɵRuntimeError(
-                  ɵRuntimeErrorCode.RESOURCE_COMPLETED_BEFORE_PRODUCING_VALUE,
-                  ngDevMode && 'Resource completed before producing a value',
-                ),
-              });
-            }
-            abortSignal.removeEventListener('abort', onAbort);
-          },
-        });
-
-        if (aborted) {
-          sub.unsubscribe();
+        if (
+          initialLoad?.result.synchronousStream === undefined &&
+          initialLoad?.request === request
+        ) {
+          initialLoad.result.attachAbortSignal(abortSignal);
+          return initialLoad.result.promise;
         }
 
-        return promise;
+        initialLoad?.result.cancel();
+
+        const result = this.createRequest(request, parse);
+        result.attachAbortSignal(abortSignal);
+        return result.promise;
       },
       defaultValue,
       equal,
       debugName,
       injector,
       undefined,
-      getInitialStream,
+      (request) => {
+        if (request === undefined || !mayHaveInitialResponse?.()) {
+          return undefined;
+        }
+
+        return this.startInitialRequest(request, parse);
+      },
     );
     this.client = injector.get(HttpClient);
   }
 
+  private startInitialRequest(
+    request: HttpRequest<unknown>,
+    parse: ((value: unknown) => T) | undefined,
+  ): Signal<ResourceStreamItem<T>> | undefined {
+    let parsingFailed = false;
+    let initializing = true;
+    const initialParse = parse
+      ? (value: unknown): T => {
+          try {
+            return parse(value);
+          } catch (error) {
+            if (initializing) {
+              parsingFailed = true;
+              if (typeof ngDevMode === 'undefined' || ngDevMode) {
+                console.warn(
+                  `Angular detected an error while parsing the cached response for the httpResource at \`${request.url}\`. ` +
+                    `The resource will fall back to its default value and try again asynchronously.`,
+                  error,
+                );
+              }
+            }
+            throw error;
+          }
+        }
+      : undefined;
+    let completedSynchronously = false;
+    let result: HttpResourceLoad<T> | undefined;
+    result = this.createRequest(request, initialParse, () => {
+      if (result === undefined) {
+        completedSynchronously = true;
+      } else if (this.initialLoad?.result === result && result.synchronousStream !== undefined) {
+        this.clearInitialLoad();
+      }
+    });
+    initializing = false;
+
+    if (parsingFailed) {
+      result.cancel();
+      untracked(() => {
+        this._headers.set(undefined);
+        this._progress.set(undefined);
+        this._statusCode.set(undefined);
+      });
+      return undefined;
+    }
+
+    if (result.synchronousStream && completedSynchronously) {
+      return result.synchronousStream;
+    }
+
+    this.initialLoad = {
+      request,
+      result,
+    };
+    this.initialLoadWatcher = untracked(() =>
+      effect(
+        () => {
+          const currentRequest = this.extRequest().request;
+          untracked(() => {
+            if (currentRequest !== request) {
+              this.cancelInitialLoad();
+            }
+          });
+        },
+        {injector: this.injector},
+      ),
+    );
+
+    return result.synchronousStream;
+  }
+
+  private createRequest(
+    request: HttpRequest<unknown>,
+    parse: ((value: unknown) => T) | undefined,
+    onComplete?: () => void,
+  ): HttpResourceLoad<T> {
+    let sub: Subscription | undefined;
+    let attachedAbortSignal: AbortSignal | undefined;
+    let completed = false;
+    let synchronous = true;
+    let synchronousStream: Signal<ResourceStreamItem<T>> | undefined;
+
+    const detachAbortSignal = () => {
+      attachedAbortSignal?.removeEventListener('abort', cancel);
+      attachedAbortSignal = undefined;
+    };
+    const complete = () => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      detachAbortSignal();
+      onComplete?.();
+    };
+    const cancel = () => {
+      sub?.unsubscribe();
+      complete();
+    };
+
+    // Start off stream as undefined.
+    const stream = signal<ResourceStreamItem<T>>({value: undefined as T});
+    let resolve: ((value: Signal<ResourceStreamItem<T>>) => void) | undefined;
+    const promise = new Promise<Signal<ResourceStreamItem<T>>>((r) => (resolve = r));
+
+    const send = (value: ResourceStreamItem<T>): void => {
+      stream.set(value);
+      if (synchronous) {
+        synchronousStream = stream;
+      }
+      resolve?.(stream);
+      resolve = undefined;
+    };
+
+    sub = untracked(() =>
+      this.client.request(request).subscribe({
+        next: (event) => {
+          switch (event.type) {
+            case HttpEventType.Response:
+              this._headers.set(event.headers);
+              this._statusCode.set(event.status);
+              try {
+                send({value: parse ? parse(event.body) : (event.body as T)});
+              } catch (error) {
+                send({error: encapsulateResourceError(error)});
+              }
+              break;
+            case HttpEventType.DownloadProgress:
+              this._progress.set(event);
+              break;
+          }
+        },
+        error: (error) => {
+          if (error instanceof HttpErrorResponse) {
+            this._headers.set(error.headers);
+            this._statusCode.set(error.status);
+          }
+
+          send({error});
+          complete();
+        },
+        complete: () => {
+          if (resolve) {
+            send({
+              error: new ɵRuntimeError(
+                ɵRuntimeErrorCode.RESOURCE_COMPLETED_BEFORE_PRODUCING_VALUE,
+                ngDevMode && 'Resource completed before producing a value',
+              ),
+            });
+          }
+          complete();
+        },
+      }),
+    );
+    synchronous = false;
+
+    return {
+      promise,
+      synchronousStream,
+      attachAbortSignal: (abortSignal) => {
+        if (completed) {
+          return;
+        }
+        detachAbortSignal();
+        attachedAbortSignal = abortSignal;
+        if (abortSignal.aborted) {
+          cancel();
+        } else {
+          abortSignal.addEventListener('abort', cancel);
+        }
+      },
+      cancel,
+    };
+  }
+
+  private clearInitialLoad() {
+    const initialLoad = this.initialLoad;
+    this.initialLoad = undefined;
+    this.initialLoadWatcher?.destroy();
+    this.initialLoadWatcher = undefined;
+    return initialLoad;
+  }
+
+  private cancelInitialLoad(): void {
+    this.clearInitialLoad()?.result.cancel();
+  }
+
   override set(value: T): void {
+    this.cancelInitialLoad();
     super.set(value);
 
     this._headers.set(undefined);
@@ -458,6 +582,18 @@ class HttpResourceImpl<T>
     this._statusCode.set(undefined);
   }
 
+  override destroy(): void {
+    this.cancelInitialLoad();
+    super.destroy();
+  }
+
   // This is a type only override of the method
   declare hasValue: () => this is HttpResourceRef<Exclude<T, undefined>>;
+}
+
+interface HttpResourceLoad<T> {
+  promise: Promise<Signal<ResourceStreamItem<T>>>;
+  synchronousStream: Signal<ResourceStreamItem<T>> | undefined;
+  attachAbortSignal(abortSignal: AbortSignal): void;
+  cancel(): void;
 }

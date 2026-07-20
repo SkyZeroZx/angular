@@ -9,7 +9,7 @@
 import {ApplicationRef, Injector, resourceFromSnapshots, signal} from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 import {isNode} from '@angular/private/testing';
-import {Observable} from 'rxjs';
+import {map, Observable} from 'rxjs';
 import {
   HttpContext,
   HttpContextToken,
@@ -476,6 +476,172 @@ describe('httpResource', () => {
       expect(res.value()).toEqual([1, 2, 3]);
 
       // Also no new request should be made
+      TestBed.inject(HttpTestingController).expectNone('/data');
+    });
+
+    it('should apply response interceptors to an initial cached response', () => {
+      let interceptorCalls = 0;
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(
+            withInterceptors([
+              (request, next) => {
+                interceptorCalls++;
+                return next(request).pipe(
+                  map((event) =>
+                    event instanceof HttpResponse
+                      ? event.clone({
+                          body: {name: (event.body as {name: string}).name},
+                          headers: event.headers.set('x-policy', 'applied'),
+                          status: 202,
+                          statusText: 'Accepted',
+                        })
+                      : event,
+                  ),
+                );
+              },
+            ]),
+          ),
+          provideHttpClientTesting(),
+          withHttpTransferCache({}),
+        ],
+      });
+
+      globalThis['ngServerMode'] = true;
+      TestBed.inject(HttpClient).get('/data').subscribe();
+      TestBed.inject(HttpTestingController)
+        .expectOne('/data')
+        .flush({name: 'Angular', internalValue: 'awesome-secret'});
+
+      globalThis['ngServerMode'] = false;
+      interceptorCalls = 0;
+      const res = httpResource(() => '/data', {injector: TestBed.inject(Injector)});
+
+      expect(res.status()).toBe('resolved');
+      expect(res.value()).toEqual({name: 'Angular'});
+      expect(res.headers()?.get('x-policy')).toBe('applied');
+      expect(res.statusCode()).toBe(202);
+      expect(interceptorCalls).toBe(1);
+      TestBed.inject(HttpTestingController).expectNone('/data');
+    });
+
+    it('should apply request interceptors before using an initial cached response', async () => {
+      let disableTransferCache = false;
+      let interceptorCalls = 0;
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(
+            withInterceptors([
+              (request, next) => {
+                interceptorCalls++;
+                return next(disableTransferCache ? request.clone({transferCache: false}) : request);
+              },
+            ]),
+          ),
+          provideHttpClientTesting(),
+          withHttpTransferCache({
+            filter: () => {
+              if (disableTransferCache) {
+                throw new Error('Transfer cache filter should not run');
+              }
+              return true;
+            },
+          }),
+        ],
+      });
+
+      globalThis['ngServerMode'] = true;
+      TestBed.inject(HttpClient).get('/data').subscribe();
+      TestBed.inject(HttpTestingController).expectOne('/data').flush({source: 'cache'});
+
+      globalThis['ngServerMode'] = false;
+      disableTransferCache = true;
+      interceptorCalls = 0;
+      const res = httpResource(() => '/data', {injector: TestBed.inject(Injector)});
+
+      expect(res.status()).toBe('loading');
+      TestBed.tick();
+      const request = TestBed.inject(HttpTestingController).expectOne('/data');
+      expect(request.request.transferCache).toBe(false);
+      request.flush({source: 'network'});
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(res.value()).toEqual({source: 'network'});
+      expect(interceptorCalls).toBe(1);
+    });
+
+    it('should cancel an open initial interceptor response when destroyed', async () => {
+      let interceptResponse = false;
+      let emitResponse!: () => void;
+      let unsubscribed = false;
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(
+            withInterceptors([
+              (request, next) => {
+                if (!interceptResponse) {
+                  return next(request);
+                }
+
+                return new Observable<HttpEvent<unknown>>((subscriber) => {
+                  emitResponse = () =>
+                    subscriber.next(new HttpResponse({body: {source: 'interceptor'}}));
+                  return () => (unsubscribed = true);
+                });
+              },
+            ]),
+          ),
+          provideHttpClientTesting(),
+          withHttpTransferCache({}),
+        ],
+      });
+
+      globalThis['ngServerMode'] = true;
+      TestBed.inject(HttpClient).get('/data').subscribe();
+      TestBed.inject(HttpTestingController).expectOne('/data').flush({source: 'cache'});
+
+      globalThis['ngServerMode'] = false;
+      interceptResponse = true;
+      const res = httpResource(() => '/data', {injector: TestBed.inject(Injector)});
+      expect(res.status()).toBe('loading');
+      TestBed.tick();
+      TestBed.inject(HttpTestingController).expectNone('/data');
+
+      emitResponse();
+      await Promise.resolve();
+      res.destroy();
+
+      expect(unsubscribed).toBe(true);
+    });
+
+    it('should retry asynchronously when parsing an initial cached response fails', async () => {
+      globalThis['ngServerMode'] = true;
+      TestBed.inject(HttpClient).get('/data').subscribe();
+      TestBed.inject(HttpTestingController).expectOne('/data').flush([1, 2, 3]);
+
+      globalThis['ngServerMode'] = false;
+      let parseCalls = 0;
+      spyOn(console, 'warn');
+      const res = httpResource(() => '/data', {
+        injector: TestBed.inject(Injector),
+        parse: (body) => {
+          if (++parseCalls === 1) {
+            throw new Error('parse failed');
+          }
+          return body as number[];
+        },
+      });
+
+      expect(res.status()).toBe('loading');
+      TestBed.tick();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(res.value()).toEqual([1, 2, 3]);
+      expect(parseCalls).toBe(2);
+      expect(console.warn).toHaveBeenCalledTimes(1);
       TestBed.inject(HttpTestingController).expectNone('/data');
     });
 
