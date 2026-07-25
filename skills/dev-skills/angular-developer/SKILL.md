@@ -1,6 +1,6 @@
 ---
 name: angular-developer
-description: Generates Angular code and provides architectural guidance. Trigger when creating projects, components, or services, or for best practices on reactivity (signals, linkedSignal, resource), forms, dependency injection, routing, SSR, accessibility (ARIA), animations, styling (component styles, Tailwind CSS), testing, or CLI tooling.
+description: Generates Angular code and provides architectural guidance. Trigger when creating projects, components, templates, or services, or for best practices on reactivity (signals, linkedSignal, resource), forms, dependency injection, routing, SSR, accessibility (ARIA), animations, styling (component styles, Tailwind CSS), testing, or CLI tooling.
 license: MIT
 metadata:
   author: Copyright 2026 Google LLC
@@ -46,6 +46,7 @@ When asked to create a new Angular project, you must determine the correct execu
 When working with Angular components, consult the following references based on the task:
 
 - **Fundamentals**: Anatomy, metadata, core concepts, and template control flow (@if, @for, @switch). Read [components.md](references/components.md)
+- **Templates**: Bindings, events, two-way binding, variables, and template fragments. Read [templates.md](references/templates.md)
 - **Inputs**: Signal-based inputs, transforms, and model inputs. Read [inputs.md](references/inputs.md)
 - **Outputs**: Signal-based outputs and custom event best practices. Read [outputs.md](references/outputs.md)
 - **Host Elements**: Host bindings and attribute injection. Read [host-elements.md](references/host-elements.md)
