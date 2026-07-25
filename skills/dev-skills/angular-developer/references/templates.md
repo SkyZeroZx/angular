@@ -5,7 +5,7 @@ changing state from signals, and move non-trivial calculations into `computed`.
 
 ## Bindings
 
-```angular-html
+```html
 <h1>{{ title() }}</h1>
 <button [disabled]="saving()" [attr.data-state]="state()" [aria-label]="actionLabel()">Save</button>
 <section [class.selected]="selected()" [style.width.px]="width()">...</section>
@@ -22,7 +22,7 @@ changing state from signals, and move non-trivial calculations into `computed`.
 
 ## Events
 
-```angular-html
+```html
 <button (click)="select(item)">Select</button>
 <input (keyup.enter)="search($event)" />
 <input (keydown.code.alt.shiftleft)="selectPrevious($event)" />
@@ -31,6 +31,51 @@ changing state from signals, and move non-trivial calculations into `computed`.
 - `$event` is the native or directive event value; type the receiving method accordingly.
 - Use key and modifier filters instead of reimplementing them inside the handler.
 - Call `event.preventDefault()` explicitly when replacing native browser behavior.
+
+### Custom event plugins
+
+Use a custom plugin only when an application deliberately needs reusable event syntax beyond ordinary native bindings:
+
+```ts
+import {Injectable, DOCUMENT} from '@angular/core';
+import {EventManagerPlugin} from '@angular/platform-browser';
+
+@Injectable()
+export class DebounceEventPlugin extends EventManagerPlugin {
+  constructor() {
+    super(inject(DOCUMENT));
+  }
+
+  override supports(eventName: string) {
+    return /debounce/.test(eventName);
+  }
+
+  override addEventListener(element: HTMLElement, eventName: string, handler: Function) {
+    const [event, method, delay = 300] = eventName.split('.');
+
+    let timeoutId: number;
+
+    const listener = (event: Event) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handler(event);
+      }, delay);
+    };
+
+    element.addEventListener(event, listener);
+
+    // Return cleanup function
+    return () => {
+      clearTimeout(timeoutId);
+      element.removeEventListener(event, listener);
+    };
+  }
+}
+```
+
+Register `{provide: EVENT_MANAGER_PLUGINS, useClass: DebounceEventPlugin, multi: true}`, then use
+the syntax as `(input.debounce.500)="search($event)"`. Keep `supports()` narrow and always return
+listener cleanup from `addEventListener`.
 
 ## Two-way binding
 
@@ -43,7 +88,7 @@ export class Counter {
 }
 ```
 
-```angular-html
+```html
 <app-counter [(count)]="count" />
 ```
 
@@ -52,11 +97,9 @@ used by the application instead of introducing `ngModel` only for convenience.
 
 ## Variables
 
-```angular-html
-@let user = currentUser();
-
-@if (user) {
-  <user-avatar [photo]="user.photo" />
+```html
+@let user = currentUser(); @if (user) {
+<user-avatar [photo]="user.photo" />
 }
 
 <input #query />
@@ -75,7 +118,7 @@ used by the application instead of introducing `ngModel` only for convenience.
 `<ng-template>` declares content without rendering it. Render a fragment declaratively with
 `NgTemplateOutlet`, usually on an `<ng-container>`:
 
-```angular-html
+```html
 <ng-template #row let-item="item">
   <span>{{ item.name }}</span>
 </ng-template>
