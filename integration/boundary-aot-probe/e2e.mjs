@@ -1,10 +1,10 @@
 import {createServer} from 'node:http';
 import {readFile, writeFile} from 'node:fs/promises';
-import {extname, join} from 'node:path';
+import {extname} from 'node:path';
 import process from 'node:process';
 import puppeteer from 'puppeteer';
 
-const root = new URL('./dist/', import.meta.url);
+const root = new URL('./dist/browser/', import.meta.url);
 const server = createServer(async (req, res) => {
   try {
     const pathname = req.url === '/' ? 'index.html' : req.url.slice(1).split('?')[0];
