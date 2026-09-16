@@ -214,6 +214,7 @@ class BrokenWidget {
     <button id="allow-success" (click)="allowSuccess()">allow success</button>
     <button id="emit-bus" (click)="emitBus()">emit bus</button>
     <button id="tick-effects" (click)="tickEffects()">tick effects</button>
+    <button id="record-state" (click)="recordState()">record state</button>
 
     @boundary {
       <live-widget />
@@ -241,6 +242,10 @@ class LeakHost {
   tickEffects(): void {
     this.state.reactiveTick.update((v) => v + 1);
     queueMicrotask(() => this.state.record('tick-effects'));
+  }
+
+  recordState(): void {
+    this.state.record('manual');
   }
 }
 
