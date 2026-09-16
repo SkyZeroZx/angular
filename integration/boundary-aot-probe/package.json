@@ -1,0 +1,23 @@
+{
+  "name": "angular-boundary-aot-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "aot": "ngc -p tsconfig.json",
+    "bundle": "esbuild out/main.js --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/main.js",
+    "build": "rm -rf out dist && mkdir -p dist && npm run aot && npm run bundle && cp src/index.html dist/index.html",
+    "e2e": "node e2e.mjs"
+  },
+  "dependencies": {
+    "@angular/common": "github:angular/common-builds#dea2ef1d36ab8cefcb6167a27957cb3d596938ea",
+    "@angular/compiler": "github:angular/compiler-builds#826f1344e9c3e570a77c5884ec25932512e30f48",
+    "@angular/compiler-cli": "github:angular/compiler-cli-builds#638712052aed7881f65e030f59dc178d53b24ffe",
+    "@angular/core": "github:angular/core-builds#405dae7a8d72c12860e1982464162cd3e395caf2",
+    "@angular/platform-browser": "github:angular/platform-browser-builds#fa4da3982fbf5c8a2179935667e236ebdc658790",
+    "esbuild": "0.25.9",
+    "puppeteer": "24.16.0",
+    "rxjs": "7.8.2",
+    "tslib": "2.8.1",
+    "typescript": "6.0.3"
+  }
+}
