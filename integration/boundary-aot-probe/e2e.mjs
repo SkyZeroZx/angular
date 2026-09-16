@@ -48,6 +48,7 @@ const evidence = {
   angularVersion: null,
   stages: [],
   assertions: {},
+  diagnostics: {},
   recovery: null,
   pageErrors,
   consoleLog,
@@ -74,18 +75,13 @@ try {
     await stage(`after-failed-retry-${i}`);
   }
 
-  // Prove that the abandoned instances are not merely retained bookkeeping: their RxJS
-  // subscriptions are still live while only the @error fallback is visible.
   await clickAndSettle('#emit-bus');
   await stage('after-bus-while-fallback');
 
-  // A normal component effect from an abandoned unattached view should not keep participating in
-  // view traversal. Recording this distinguishes retained external subscriptions from CD traversal.
   await clickAndSettle('#tick-effects');
   await new Promise((resolve) => setTimeout(resolve, 150));
   await stage('after-signal-tick-while-fallback');
 
-  // Separately check whether changing the failure condition and invoking $reset can recover.
   await clickAndSettle('#allow-success');
   await stage('after-allow-success');
   await clickAndSettle('#retry-leak');
@@ -135,8 +131,12 @@ try {
       busState?.busHits === 4,
     abandonedViewEffectsDoNotReenterNormalViewTraversal:
       tickState?.effectRuns === 0,
-    recoveryAfterFailureConditionClears:
-      primaryExists && !fallbackExists,
+  };
+
+  evidence.diagnostics = {
+    recoveryAfterFailureConditionClears: primaryExists && !fallbackExists,
+    recoveryError:
+      finalProbe.errors.find((entry) => entry.message.includes('componentOffset'))?.message ?? null,
   };
 
   evidence.pass = Object.values(evidence.assertions).every(Boolean);
