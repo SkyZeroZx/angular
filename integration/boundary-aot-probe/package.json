@@ -9,11 +9,11 @@
     "e2e": "node e2e.mjs"
   },
   "dependencies": {
-    "@angular/common": "github:angular/common-builds#dea2ef1d36ab8cefcb6167a27957cb3d596938ea",
-    "@angular/compiler": "github:angular/compiler-builds#826f1344e9c3e570a77c5884ec25932512e30f48",
-    "@angular/compiler-cli": "github:angular/compiler-cli-builds#638712052aed7881f65e030f59dc178d53b24ffe",
-    "@angular/core": "github:angular/core-builds#405dae7a8d72c12860e1982464162cd3e395caf2",
-    "@angular/platform-browser": "github:angular/platform-browser-builds#fa4da3982fbf5c8a2179935667e236ebdc658790",
+    "@angular/common": "22.2.0-next.7",
+    "@angular/compiler": "22.2.0-next.7",
+    "@angular/compiler-cli": "22.2.0-next.7",
+    "@angular/core": "22.2.0-next.7",
+    "@angular/platform-browser": "22.2.0-next.7",
     "esbuild": "0.25.9",
     "puppeteer": "24.16.0",
     "rxjs": "7.8.2",
