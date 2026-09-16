@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "aot": "ngc -p tsconfig.json",
-    "bundle": "esbuild out/main.js --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/main.js",
-    "build": "rm -rf out dist && mkdir -p dist && npm run aot && npm run bundle && cp src/index.html dist/index.html",
+    "build": "ng build boundary-aot-probe --configuration production",
     "e2e": "node e2e.mjs"
   },
   "dependencies": {
@@ -14,7 +12,8 @@
     "@angular/compiler-cli": "22.2.0-next.7",
     "@angular/core": "22.2.0-next.7",
     "@angular/platform-browser": "22.2.0-next.7",
-    "esbuild": "0.25.9",
+    "@angular/build": "22.2.0-next.6",
+    "@angular/cli": "22.2.0-next.6",
     "puppeteer": "24.16.0",
     "rxjs": "7.8.2",
     "tslib": "2.8.1",
