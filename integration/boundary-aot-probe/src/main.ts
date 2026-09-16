@@ -58,9 +58,19 @@ const probe: ProbeResult = (window.__boundaryProbe = {
   leak: {snapshots: []},
 });
 
+function typeLabel(type: unknown): string | null {
+  if (typeof type !== 'function') return null;
+  return ((type as {probeType?: string}).probeType ?? (type as Function).name ?? null) as string | null;
+}
+
+function instanceTypeLabel(instance: unknown): string | null {
+  if (instance == null || typeof instance !== 'object') return null;
+  return typeLabel((instance as {constructor?: unknown}).constructor);
+}
+
 @Injectable({providedIn: 'root'})
 class ProbeState {
-  readonly allowBroken = signal(false);
+  allowBroken = false;
   readonly reactiveTick = signal(0);
   readonly bus = new Subject<void>();
 
@@ -79,7 +89,7 @@ class ProbeState {
       effectRuns: this.effectRuns,
       busHits: this.busHits,
       brokenAttempts: this.brokenAttempts,
-      allowBroken: this.allowBroken(),
+      allowBroken: this.allowBroken,
     };
   }
 
@@ -91,18 +101,15 @@ class ProbeState {
 @Injectable()
 class ProbeErrorHandler extends ErrorHandler {
   override handleError(error: unknown): void {
-    // Keep the probe running while retaining unexpected errors in the browser console.
     console.error('PROBE_ERROR', error);
   }
 
   override onViewError(error: Error, details: ErrorDetails): void {
     const record: ErrorRecord = {
       message: error.message,
-      declarationType: details.declarationType?.name ?? null,
-      declarationInstanceType:
-        (details.declarationInstance as {constructor?: {name?: string}} | null)?.constructor?.name ??
-        null,
-      boundaryType: details.boundary?.type?.name ?? null,
+      declarationType: typeLabel(details.declarationType),
+      declarationInstanceType: instanceTypeLabel(details.declarationInstance),
+      boundaryType: typeLabel(details.boundary?.type),
     };
     probe.errors.push(record);
     if (error.message === 'create-pass-child-error') {
@@ -114,11 +121,9 @@ class ProbeErrorHandler extends ErrorHandler {
   }
 }
 
-@Component({
-  selector: 'create-throw-child',
-  template: 'never rendered',
-})
+@Component({selector: 'create-throw-child', template: 'never rendered'})
 class CreateThrowChild {
+  static readonly probeType = 'CreateThrowChild';
   constructor() {
     throw new Error('create-pass-child-error');
   }
@@ -135,13 +140,13 @@ class CreateThrowChild {
     }
   `,
 })
-class MetadataCreateHost {}
+class MetadataCreateHost {
+  static readonly probeType = 'MetadataCreateHost';
+}
 
-@Component({
-  selector: 'update-throw-child',
-  template: `{{ read() }}`,
-})
+@Component({selector: 'update-throw-child', template: `{{ read() }}`})
 class UpdateThrowChild {
+  static readonly probeType = 'UpdateThrowChild';
   readonly shouldThrow = signal(false);
 
   read(): string {
@@ -164,13 +169,13 @@ class UpdateThrowChild {
     }
   `,
 })
-class MetadataUpdateHost {}
+class MetadataUpdateHost {
+  static readonly probeType = 'MetadataUpdateHost';
+}
 
-@Component({
-  selector: 'live-widget',
-  template: `<span class="live-widget">live</span>`,
-})
+@Component({selector: 'live-widget', template: `<span class="live-widget">live</span>`})
 class LiveWidget implements OnDestroy {
+  static readonly probeType = 'LiveWidget';
   private readonly state = inject(ProbeState);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -198,10 +203,11 @@ class LiveWidget implements OnDestroy {
   template: `<span class="broken-widget">broken-control-now-successful</span>`,
 })
 class BrokenWidget {
+  static readonly probeType = 'BrokenWidget';
   constructor() {
     const state = inject(ProbeState);
     state.brokenAttempts++;
-    if (!state.allowBroken()) {
+    if (!state.allowBroken) {
       throw new Error('broken-widget-create-error');
     }
   }
@@ -227,10 +233,11 @@ class BrokenWidget {
   `,
 })
 class LeakHost {
+  static readonly probeType = 'LeakHost';
   private readonly state = inject(ProbeState);
 
   allowSuccess(): void {
-    this.state.allowBroken.set(true);
+    this.state.allowBroken = true;
     this.state.record('allow-success');
   }
 
@@ -259,6 +266,7 @@ class LeakHost {
   `,
 })
 class AppRoot {
+  static readonly probeType = 'AppRoot';
   private readonly state = inject(ProbeState);
 
   constructor() {
@@ -276,15 +284,9 @@ bootstrapApplication(AppRoot, {
     const root = document.querySelector('app-root');
     probe.angularVersion = root?.getAttribute('ng-version') ?? null;
     probe.ready = true;
-    injectProbeHelpers();
+    document.body.dataset.boundaryProbeReady = 'true';
   })
   .catch((error) => {
     console.error('BOOTSTRAP_FAILED', error);
     throw error;
   });
-
-function injectProbeHelpers(): void {
-  // The E2E uses DOM events exactly as an application user would. This marker only signals that
-  // bootstrap and the first boundary transitions completed.
-  document.body.dataset.boundaryProbeReady = 'true';
-}
