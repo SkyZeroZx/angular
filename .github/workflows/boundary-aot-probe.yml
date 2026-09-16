@@ -1,0 +1,40 @@
+name: Boundary AOT Probe
+
+on:
+  push:
+    branches:
+      - boundary-e2e-work-20260915
+    paths:
+      - 'integration/boundary-aot-probe/**'
+      - '.github/workflows/boundary-aot-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+          cache-dependency-path: integration/boundary-aot-probe/package.json
+      - name: Install exact published Angular next packages
+        working-directory: integration/boundary-aot-probe
+        run: npm install --no-audit --no-fund
+      - name: Compile application with ngc AOT and bundle
+        working-directory: integration/boundary-aot-probe
+        run: npm run build
+      - name: Run Chromium E2E
+        working-directory: integration/boundary-aot-probe
+        run: npm run e2e
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boundary-aot-probe-evidence
+          path: integration/boundary-aot-probe/evidence.json
+          if-no-files-found: warn
