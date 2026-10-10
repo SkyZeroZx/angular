@@ -1923,6 +1923,38 @@ describe('redirects', () => {
       );
     });
 
+    it('does not substitute placeholders in a string returned by a function', async () => {
+      await checkRedirect(
+        [
+          {path: 'a/:id', redirectTo: () => '/b/:id?q=:q'},
+          {path: '**', component: ComponentC},
+        ],
+        '/a/1?q=2',
+        (t: UrlTree) => {
+          expectTreeToBe(t, '/b/:id?q=:q');
+        },
+      );
+    });
+
+    it('does not read request data as placeholders in a string returned by a function', async () => {
+      await checkRedirect(
+        [
+          {
+            path: 'a/:id/:name',
+            redirectTo: ({params}) => {
+              const name = encodeURIComponent(params['name']);
+              return `/b/${name}?q=${name}`;
+            },
+          },
+          {path: '**', component: ComponentC},
+        ],
+        '/a/1/:id?id=2',
+        (t: UrlTree) => {
+          expectTreeToBe(t, '/b/:id?q=:id');
+        },
+      );
+    });
+
     it('works when the returned redirect observable does not complete', async () => {
       await checkRedirect(
         [

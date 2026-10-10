@@ -96,11 +96,13 @@ export class ApplyRedirects {
       throw new AbsoluteRedirect(redirect);
     }
 
+    // A string returned by a function is not a template. It is often built from request data, so
+    // its `:name` segments and query values are kept as written.
     const newTree = this.applyRedirectCreateUrlTree(
       redirect,
       this.urlSerializer.parse(redirect),
       segments,
-      posParams,
+      typeof redirectTo === 'string' ? posParams : null,
     );
 
     if (redirect[0] === '/') {
@@ -113,12 +115,14 @@ export class ApplyRedirects {
     redirectTo: string,
     urlTree: UrlTree,
     segments: UrlSegment[],
-    posParams: {[k: string]: UrlSegment},
+    posParams: {[k: string]: UrlSegment} | null,
   ): UrlTree {
     const newRoot = this.createSegmentGroup(redirectTo, urlTree.root, segments, posParams);
     return new UrlTree(
       newRoot,
-      this.createQueryParams(urlTree.queryParams, this.urlTree.queryParams),
+      posParams === null
+        ? urlTree.queryParams
+        : this.createQueryParams(urlTree.queryParams, this.urlTree.queryParams),
       urlTree.fragment,
     );
   }
@@ -141,7 +145,7 @@ export class ApplyRedirects {
     redirectTo: string,
     group: UrlSegmentGroup,
     segments: UrlSegment[],
-    posParams: {[k: string]: UrlSegment},
+    posParams: {[k: string]: UrlSegment} | null,
   ): UrlSegmentGroup {
     const updatedSegments = this.createSegments(redirectTo, group.segments, segments, posParams);
 
@@ -158,10 +162,10 @@ export class ApplyRedirects {
     redirectTo: string,
     redirectToSegments: UrlSegment[],
     actualSegments: UrlSegment[],
-    posParams: {[k: string]: UrlSegment},
+    posParams: {[k: string]: UrlSegment} | null,
   ): UrlSegment[] {
     return redirectToSegments.map((s) =>
-      s.path[0] === ':'
+      posParams !== null && s.path[0] === ':'
         ? this.findPosParam(redirectTo, s, posParams)
         : this.findOrReturn(s, actualSegments),
     );
