@@ -104,6 +104,19 @@ describe('redirects', () => {
     }
   });
 
+  it('should not read an encoded colon as a placeholder', async () => {
+    await checkRedirect(
+      [
+        {path: 'a/:id', redirectTo: '/b/:id/%3aid?q=%3Aid'},
+        {path: '**', component: ComponentC},
+      ],
+      '/a/1?id=2',
+      (t: UrlTree) => {
+        expectTreeToBe(t, '/b/1/%3Aid?q=%3Aid');
+      },
+    );
+  });
+
   it('should pass matrix parameters', async () => {
     await checkRedirect(
       [
@@ -1919,6 +1932,25 @@ describe('redirects', () => {
         '/a;k1=v1;k2=v2/b;k3=v3;k4=v4',
         (t: UrlTree) => {
           expectTreeToBe(t, 'redirect?k1=v1&k2=v2&k3=v3&k4=v4');
+        },
+      );
+    });
+
+    it('does not read encoded colons in a string returned by a function as placeholders', async () => {
+      await checkRedirect(
+        [
+          {
+            path: 'a/:id',
+            redirectTo: ({queryParams}) => {
+              const q = encodeURIComponent(queryParams['q']);
+              return `/b/:id/:id/${q}?q=${q}&r=:q`;
+            },
+          },
+          {path: '**', component: ComponentC},
+        ],
+        '/a/1?q=:id',
+        (t: UrlTree) => {
+          expectTreeToBe(t, '/b/1/1/:id?q=:id&r=:id');
         },
       );
     });

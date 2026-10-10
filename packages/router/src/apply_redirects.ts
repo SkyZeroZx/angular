@@ -101,6 +101,9 @@ export class ApplyRedirects {
       this.urlSerializer.parse(redirect),
       segments,
       posParams,
+      // Only a literal `:` starts a placeholder. Parsing decodes `%3A`, which is how
+      // `encodeURIComponent` writes `:`, so placeholders are read from a copy that keeps it encoded.
+      this.urlSerializer.parse(redirect.replace(/%3A/gi, '%253A')),
     );
 
     if (redirect[0] === '/') {
@@ -114,19 +117,26 @@ export class ApplyRedirects {
     urlTree: UrlTree,
     segments: UrlSegment[],
     posParams: {[k: string]: UrlSegment},
+    literal: UrlTree,
   ): UrlTree {
-    const newRoot = this.createSegmentGroup(redirectTo, urlTree.root, segments, posParams);
+    const newRoot = this.createSegmentGroup(
+      redirectTo,
+      urlTree.root,
+      segments,
+      posParams,
+      literal.root,
+    );
     return new UrlTree(
       newRoot,
-      this.createQueryParams(urlTree.queryParams, this.urlTree.queryParams),
+      this.createQueryParams(urlTree.queryParams, this.urlTree.queryParams, literal.queryParams),
       urlTree.fragment,
     );
   }
 
-  createQueryParams(redirectToParams: Params, actualParams: Params): Params {
+  createQueryParams(redirectToParams: Params, actualParams: Params, literal: Params): Params {
     const res: Params = {};
     Object.entries(redirectToParams).forEach(([k, v]) => {
-      const copySourceValue = typeof v === 'string' && v[0] === ':';
+      const copySourceValue = typeof v === 'string' && v[0] === ':' && literal[k] === v;
       if (copySourceValue) {
         const sourceName = v.substring(1);
         res[k] = actualParams[sourceName];
@@ -142,13 +152,26 @@ export class ApplyRedirects {
     group: UrlSegmentGroup,
     segments: UrlSegment[],
     posParams: {[k: string]: UrlSegment},
+    literal: UrlSegmentGroup | undefined,
   ): UrlSegmentGroup {
-    const updatedSegments = this.createSegments(redirectTo, group.segments, segments, posParams);
+    const updatedSegments = this.createSegments(
+      redirectTo,
+      group.segments,
+      segments,
+      posParams,
+      literal,
+    );
 
     // Keyed by outlet name, which can be `__proto__`, so use a null-prototype map.
     let children: {[n: string]: UrlSegmentGroup} = Object.create(null);
     Object.entries(group.children).forEach(([name, child]) => {
-      children[name] = this.createSegmentGroup(redirectTo, child, segments, posParams);
+      children[name] = this.createSegmentGroup(
+        redirectTo,
+        child,
+        segments,
+        posParams,
+        literal?.children[name],
+      );
     });
 
     return new UrlSegmentGroup(updatedSegments, children);
@@ -159,9 +182,10 @@ export class ApplyRedirects {
     redirectToSegments: UrlSegment[],
     actualSegments: UrlSegment[],
     posParams: {[k: string]: UrlSegment},
+    literal: UrlSegmentGroup | undefined,
   ): UrlSegment[] {
-    return redirectToSegments.map((s) =>
-      s.path[0] === ':'
+    return redirectToSegments.map((s, i) =>
+      s.path[0] === ':' && literal?.segments[i]?.path === s.path
         ? this.findPosParam(redirectTo, s, posParams)
         : this.findOrReturn(s, actualSegments),
     );
