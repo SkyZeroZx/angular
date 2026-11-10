@@ -89,9 +89,9 @@ export class NgModelGroup extends AbstractFormGroupDirective implements OnInit, 
   /** @internal */
   override _checkParentType(): void {
     if (
+      (typeof ngDevMode === 'undefined' || ngDevMode) &&
       !(this._parent instanceof NgModelGroup) &&
-      !(this._parent instanceof NgForm) &&
-      (typeof ngDevMode === 'undefined' || ngDevMode)
+      !(this._parent instanceof NgForm)
     ) {
       throw modelGroupParentException();
     }

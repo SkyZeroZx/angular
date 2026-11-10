@@ -417,7 +417,7 @@ export class NgModel extends NgControl implements OnChanges, OnDestroy {
   private _checkName(): void {
     if (this.options && this.options.name) this.name = this.options.name;
 
-    if (!this._isStandalone() && !this.name && (typeof ngDevMode === 'undefined' || ngDevMode)) {
+    if ((typeof ngDevMode === 'undefined' || ngDevMode) && !this._isStandalone() && !this.name) {
       throw missingNameException();
     }
   }
