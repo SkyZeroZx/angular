@@ -51,6 +51,17 @@ function toFloat(value: string | number): number {
   return typeof value === 'number' ? value : parseFloat(value);
 }
 
+const REQUIRED_VALIDATOR_BRAND = /* @__PURE__ */ Symbol();
+
+/** Identifies required validators without retaining the directive class. */
+export function isRequiredValidator(value: unknown): value is RequiredValidator {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[REQUIRED_VALIDATOR_BRAND] === true
+  );
+}
+
 /**
  * @description
  * Defines the map of errors returned from failed validation checks.
@@ -184,7 +195,7 @@ abstract class AbstractValidatorDirective implements Validator, OnChanges {
    * function with the logic specific to a particular validator directive.
    */
   enabled(input: unknown): boolean {
-    return input != null /* both `null` and `undefined` */;
+    return input != null; /* both `null` and `undefined` */
   }
 }
 
@@ -384,6 +395,12 @@ export const CHECKBOX_REQUIRED_VALIDATOR: Provider = {
   standalone: false,
 })
 export class RequiredValidator extends AbstractValidatorDirective {
+  /** @internal */
+  constructor() {
+    super();
+    (this as Record<symbol, unknown>)[REQUIRED_VALIDATOR_BRAND] = true;
+  }
+
   /**
    * @description
    * Tracks changes to the required attribute bound to this directive.

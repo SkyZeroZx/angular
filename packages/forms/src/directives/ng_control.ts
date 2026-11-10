@@ -30,7 +30,12 @@ import {ControlValueAccessor} from './control_value_accessor';
 import {isNativeFormElement, setNativeDomProperty, type NativeFormControl} from './native';
 import {ReactiveValidationError} from './reactive_validation_error';
 import {ɵFORM_CONTROL_INTEGRATION as FORM_CONTROL_INTEGRATION, selectValueAccessor} from './shared';
-import {RequiredValidator, ValidationErrors, ValidatorFn} from './validators';
+import {
+  isRequiredValidator,
+  type RequiredValidator,
+  ValidationErrors,
+  ValidatorFn,
+} from './validators';
 
 type ParseError = {readonly kind: string};
 
@@ -296,7 +301,7 @@ export abstract class NgControl extends AbstractControlDirective {
     this.customControlBindings = {};
     this.isNativeFormElement = isNativeFormElement(host.nativeElement);
 
-    this.requiredValidatorViaDi = this._rawValidators.find((v) => v instanceof RequiredValidator);
+    this.requiredValidatorViaDi = this._rawValidators.find(isRequiredValidator);
   }
 
   private updateControlFromCustom(control: AbstractControl): void {
