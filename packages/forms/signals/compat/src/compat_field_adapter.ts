@@ -7,7 +7,7 @@
  */
 
 import {computed, Signal, WritableSignal} from '@angular/core';
-import {AbstractControl} from '@angular/forms';
+import {type AbstractControl, ɵisAbstractControl as isAbstractControl} from '@angular/forms';
 import {BasicFieldAdapter, FieldAdapter} from '../../src/field/field_adapter';
 import {FormFieldManager} from '../../src/field/manager';
 import {FieldNode} from '../../src/field/node';
@@ -44,7 +44,7 @@ export class CompatFieldAdapter implements FieldAdapter {
     pathNode: FieldPathNode,
     adapter: FieldAdapter,
   ): FieldNode {
-    if (value() instanceof AbstractControl) {
+    if (isAbstractControl(value())) {
       return createCompatNode({
         kind: 'root',
         fieldManager,
@@ -104,7 +104,7 @@ export class CompatFieldAdapter implements FieldAdapter {
   newChild(options: ChildFieldNodeOptions): FieldNode {
     const value = options.parent.value()[options.initialKeyInParent];
 
-    if (value instanceof AbstractControl) {
+    if (isAbstractControl(value)) {
       return createCompatNode(options);
     }
 
