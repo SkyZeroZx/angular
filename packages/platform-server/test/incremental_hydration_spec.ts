@@ -49,6 +49,7 @@ import {
   withNoIncrementalHydration,
 } from '@angular/platform-browser';
 import {provideRouter, RouterLink, RouterOutlet, Routes} from '@angular/router';
+import {BEFORE_APP_SERIALIZED} from '../index';
 import {getAppContents, prepareEnvironmentAndHydrate, resetTViewsFor} from './dom_utils';
 import {
   clearConsole,
@@ -122,6 +123,74 @@ describe('platform-server partial hydration integration', () => {
     });
 
     describe('annotation', () => {
+      it('should leave the client runtime inactive during SSR and activate it during hydration', async () => {
+        let resolveClick!: () => void;
+        const clicked = new Promise<void>((resolve) => (resolveClick = resolve));
+
+        @Component({
+          selector: 'app',
+          template: `
+            @defer (hydrate on interaction) {
+              <button id="counter" (click)="increment()">{{ count() }}</button>
+            }
+          `,
+        })
+        class App {
+          readonly count = signal(0);
+
+          increment() {
+            this.count.update((value) => value + 1);
+            resolveClick();
+          }
+        }
+
+        let serverRegistry: unknown;
+        let appRef: ApplicationRef | undefined;
+        const providers = [{provide: APP_ID, useValue: 'ssr-runtime-test'}];
+        resetIncrementalHydrationRuntimeForTests();
+        try {
+          const html = await ssr(App, {
+            envProviders: [
+              ...providers,
+              {
+                provide: BEFORE_APP_SERIALIZED,
+                multi: true,
+                useFactory: () => {
+                  const serverApp = inject(ApplicationRef);
+                  return () => {
+                    serverRegistry = serverApp.injector.get(DEHYDRATED_BLOCK_REGISTRY);
+                  };
+                },
+              },
+            ],
+          });
+
+          expect(html).toContain('ngb="d0"');
+          expect(html).toContain('"__nghDeferData__":{"d0":');
+          expect(html).toContain('window.__jsaction_bootstrap');
+          expect(serverRegistry).toBeNull();
+
+          resetTViewsFor(App);
+          const doc = getDocument();
+          appRef = await prepareEnvironmentAndHydrate(doc, html, App, {envProviders: providers});
+          await appRef.whenStable();
+
+          const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
+          expect(registry.size).toBe(1);
+          expect(appRef.injector.get(JSACTION_EVENT_CONTRACT).instance).toBeDefined();
+
+          const host = getComponentRef<App>(appRef).location.nativeElement as HTMLElement;
+          host.querySelector('button')!.dispatchEvent(new CustomEvent('click', {bubbles: true}));
+          await clicked;
+          await appRef.whenStable();
+
+          expect(host.querySelector('button')!.textContent).toBe('1');
+        } finally {
+          appRef?.destroy();
+          resetIncrementalHydrationRuntimeForTests();
+        }
+      });
+
       it('should annotate inner components with defer block id', async () => {
         @Component({
           selector: 'dep-a',
@@ -1983,7 +2052,6 @@ describe('platform-server partial hydration integration', () => {
           fnB() {
             this.value.set('end');
           }
-          registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         }
 
         const appId = 'custom-app-id';
@@ -2010,7 +2078,7 @@ describe('platform-server partial hydration integration', () => {
           hydrationFeatures,
         });
         const compRef = getComponentRef<SimpleComponent>(appRef);
-        const registry = compRef.instance.registry;
+        const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
         spyOn(registry, 'cleanup').and.callThrough();
         appRef.tick();
         await appRef.whenStable();
@@ -2362,7 +2430,6 @@ describe('platform-server partial hydration integration', () => {
         fnB() {
           this.value.set('end');
         }
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         private readonly doc = inject(DOCUMENT);
 
         constructor() {
@@ -2414,7 +2481,7 @@ describe('platform-server partial hydration integration', () => {
         hydrationFeatures,
       });
       const compRef = getComponentRef<SimpleComponent>(appRef);
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       spyOn(registry, 'cleanup').and.callThrough();
       appRef.tick();
       await appRef.whenStable();
@@ -2622,7 +2689,6 @@ describe('platform-server partial hydration integration', () => {
       class SimpleComponent {
         fnA() {}
         isServer = isPlatformServer(inject(PLATFORM_ID));
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
       }
 
       const appId = 'custom-app-id';
@@ -2651,7 +2717,7 @@ describe('platform-server partial hydration integration', () => {
         hydrationFeatures,
       });
       const compRef = getComponentRef<SimpleComponent>(appRef);
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       spyOn(registry, 'cleanup').and.callThrough();
 
       appRef.tick();
@@ -2701,7 +2767,6 @@ describe('platform-server partial hydration integration', () => {
       class SimpleComponent {
         fnA() {}
 
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         jsActionMap = inject(JSACTION_BLOCK_ELEMENT_MAP);
         contract = inject(JSACTION_EVENT_CONTRACT);
       }
@@ -2726,7 +2791,7 @@ describe('platform-server partial hydration integration', () => {
       appRef.tick();
       await appRef.whenStable();
 
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       const jsActionMap = compRef.instance.jsActionMap;
       const contract = compRef.instance.contract;
       spyOn(contract.instance!, 'cleanUp').and.callThrough();
@@ -2872,7 +2937,6 @@ describe('platform-server partial hydration integration', () => {
       class SimpleComponent {
         fnA() {}
 
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         jsActionMap = inject(JSACTION_BLOCK_ELEMENT_MAP);
         contract = inject(JSACTION_EVENT_CONTRACT);
       }
@@ -2897,7 +2961,7 @@ describe('platform-server partial hydration integration', () => {
       appRef.tick();
       await appRef.whenStable();
 
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       const jsActionMap = compRef.instance.jsActionMap;
       const contract = compRef.instance.contract;
       spyOn(contract.instance!, 'cleanUp').and.callThrough();
@@ -2940,7 +3004,6 @@ describe('platform-server partial hydration integration', () => {
       class SimpleComponent {
         fnA() {}
 
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         jsActionMap = inject(JSACTION_BLOCK_ELEMENT_MAP);
         contract = inject(JSACTION_EVENT_CONTRACT);
       }
@@ -2965,7 +3028,7 @@ describe('platform-server partial hydration integration', () => {
       appRef.tick();
       await appRef.whenStable();
 
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       const jsActionMap = compRef.instance.jsActionMap;
       const contract = compRef.instance.contract;
       spyOn(contract.instance!, 'cleanUp').and.callThrough();
@@ -3015,7 +3078,6 @@ describe('platform-server partial hydration integration', () => {
       class SimpleComponent {
         fnA() {}
 
-        registry = inject(DEHYDRATED_BLOCK_REGISTRY);
         jsActionMap = inject(JSACTION_BLOCK_ELEMENT_MAP);
         contract = inject(JSACTION_EVENT_CONTRACT);
       }
@@ -3042,7 +3104,7 @@ describe('platform-server partial hydration integration', () => {
       const contract = compRef.instance.contract;
       spyOn(contract.instance!, 'cleanUp').and.callThrough();
 
-      const registry = compRef.instance.registry;
+      const registry = appRef.injector.get(DEHYDRATED_BLOCK_REGISTRY);
       const jsActionMap = compRef.instance.jsActionMap;
       spyOn(registry, 'cleanup').and.callThrough();
 

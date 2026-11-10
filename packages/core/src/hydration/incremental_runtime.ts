@@ -78,7 +78,10 @@ export function runIncrementalHydrationBootstrap(state: IncrementalHydrationBoot
  * @codeGenApi
  */
 export function ɵɵenableIncrementalHydrationRuntime(): void {
-  if (!isIncrementalHydrationRuntimeActive) {
+  if (
+    (typeof ngServerMode === 'undefined' || !ngServerMode) &&
+    !isIncrementalHydrationRuntimeActive
+  ) {
     isIncrementalHydrationRuntimeActive = true;
 
     enableRetrieveDeferBlockDataImpl();
