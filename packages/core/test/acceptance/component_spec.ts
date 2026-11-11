@@ -37,6 +37,7 @@ import {
 } from '../../src/core';
 import {TestBed} from '../../testing';
 
+import {getComponentDef} from '../../src/render3/def_getters';
 import {global} from '../../src/util/global';
 
 describe('component', () => {
@@ -764,6 +765,65 @@ describe('component', () => {
   });
 
   describe('reflectComponentType', () => {
+    it('should preserve eagerly captured metadata', () => {
+      @Component({
+        selector: 'catalog-card[active], [catalogCard]',
+        template: '<ng-content select="[summary]" />',
+      })
+      class CatalogCard {}
+
+      class Replacement {}
+
+      const mirror = reflectComponentType(CatalogCard)!;
+      const selectors = mirror.ngContentSelectors;
+      Object.assign(getComponentDef(CatalogCard)!, {
+        type: Replacement,
+        selectors: [['replacement']],
+        ngContentSelectors: ['replacement'],
+      });
+
+      expect(mirror.type).toBe(CatalogCard);
+      expect(mirror.selector).toBe('catalog-card[active],[catalogCard]');
+      expect(mirror.ngContentSelectors).toBe(selectors);
+      expect(mirror.ngContentSelectors).toEqual(['[summary]']);
+    });
+
+    it('should lazily cache inputs and outputs for each mirror', () => {
+      @Component({template: '', inputs: ['value'], outputs: ['updated']})
+      class CatalogCard {}
+
+      const mirror = reflectComponentType(CatalogCard)!;
+      const definition = getComponentDef(CatalogCard)!;
+      definition.inputs['first'] = ['first', 0, null];
+      definition.outputs['first'] = 'first';
+
+      const inputs = mirror.inputs;
+      const outputs = mirror.outputs;
+      expect(inputs.map((input) => input.propName)).toEqual(['value', 'first']);
+      expect(outputs.map((output) => output.propName)).toEqual(['updated', 'first']);
+
+      definition.inputs['second'] = ['second', 0, null];
+      definition.outputs['second'] = 'second';
+      expect(mirror.inputs).toBe(inputs);
+      expect(mirror.outputs).toBe(outputs);
+      expect(inputs.map((input) => input.propName)).toEqual(['value', 'first']);
+      expect(outputs.map((output) => output.propName)).toEqual(['updated', 'first']);
+
+      const anotherMirror = reflectComponentType(CatalogCard)!;
+      expect(anotherMirror.inputs).not.toBe(inputs);
+      expect(anotherMirror.outputs).not.toBe(outputs);
+      expect(anotherMirror.inputs.map((input) => input.propName)).toEqual([
+        'value',
+        'first',
+        'second',
+      ]);
+      expect(anotherMirror.outputs.map((output) => output.propName)).toEqual([
+        'updated',
+        'first',
+        'second',
+      ]);
+    });
+
     it('should create an ComponentMirror for a standalone component', () => {
       function transformFn() {}
 

@@ -89,7 +89,7 @@ import {LOCALE_ID} from '../i18n/tokens';
 const shadowRootSupported = typeof ShadowRoot !== 'undefined';
 const documentSupported = typeof Document !== 'undefined';
 
-function toInputRefArray<T>(map: DirectiveDef<T>['inputs']): ComponentFactory<T>['inputs'] {
+export function toInputRefArray<T>(map: DirectiveDef<T>['inputs']): ComponentFactory<T>['inputs'] {
   return Object.keys(map).map((name) => {
     const [propName, flags, transform] = map[name];
     const inputData: ComponentFactory<T>['inputs'][0] = {
@@ -104,7 +104,9 @@ function toInputRefArray<T>(map: DirectiveDef<T>['inputs']): ComponentFactory<T>
   });
 }
 
-function toOutputRefArray<T>(map: DirectiveDef<T>['outputs']): ComponentFactory<T>['outputs'] {
+export function toOutputRefArray<T>(
+  map: DirectiveDef<T>['outputs'],
+): ComponentFactory<T>['outputs'] {
   return Object.keys(map).map((name) => ({propName: map[name], templateName: name}));
 }
 

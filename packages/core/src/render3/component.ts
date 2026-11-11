@@ -11,13 +11,14 @@ import {EnvironmentInjector, getNullInjector} from '../di/r3_injector';
 import {Type} from '../interface/type';
 import {ComponentRef} from '../linker/component_factory';
 
-import {ComponentFactory} from './component_ref';
+import {ComponentFactory, toInputRefArray, toOutputRefArray} from './component_ref';
 import {getComponentDef} from './def_getters';
 import {Binding, DirectiveWithBindings} from './dynamic_bindings';
 import {assertComponentDef} from './errors';
 import {ON_ERROR} from './interfaces/view';
 import {ErrorDetails} from '../error_handler';
 import {ViewRef as R3ViewRef} from './view_ref';
+import {stringifyCSSSelectorList} from './node_selector_matcher';
 
 /**
  * Creates a `ComponentRef` instance based on provided component type and a set of options.
@@ -202,13 +203,18 @@ export function reflectComponentType<C>(component: Type<C>): ComponentMirror<C> 
   const componentDef = getComponentDef(component);
   if (!componentDef) return null;
 
-  const factory = new ComponentFactory<C>(componentDef);
+  const componentType = componentDef.type as Type<C>;
+  const selector = stringifyCSSSelectorList(componentDef.selectors);
+  const ngContentSelectors = componentDef.ngContentSelectors ?? [];
+  let inputs: ComponentMirror<C>['inputs'] | null = null;
+  let outputs: ComponentMirror<C>['outputs'] | null = null;
+
   return {
     get selector(): string {
-      return factory.selector;
+      return selector;
     },
     get type(): Type<C> {
-      return factory.componentType;
+      return componentType;
     },
     get inputs(): ReadonlyArray<{
       propName: string;
@@ -216,13 +222,13 @@ export function reflectComponentType<C>(component: Type<C>): ComponentMirror<C> 
       transform?: (value: any) => any;
       isSignal: boolean;
     }> {
-      return factory.inputs;
+      return (inputs ??= toInputRefArray(componentDef.inputs));
     },
     get outputs(): ReadonlyArray<{propName: string; templateName: string}> {
-      return factory.outputs;
+      return (outputs ??= toOutputRefArray(componentDef.outputs));
     },
     get ngContentSelectors(): ReadonlyArray<string> {
-      return factory.ngContentSelectors;
+      return ngContentSelectors;
     },
     get isStandalone(): boolean {
       return componentDef.standalone;
